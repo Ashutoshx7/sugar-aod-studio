@@ -53,7 +53,178 @@ from gi.repository import GLib
 from gi.repository import Pango
 
 from sugar3.graphics import style
+from sugar3.graphics.icon import CanvasIcon
 from sugar3.graphics.icon import Icon
+
+# Sugar's home-ring constants, ported from
+# jarabe/desktop/favoriteslayout.py (RingLayout) so the studio's home
+# matches the shell's geometry.
+_RING_MINIMUM_RADIUS = style.XLARGE_ICON_SIZE / 2 + style.DEFAULT_SPACING
+_RING_SPACING_FACTOR = 0.95
+_SPIRAL_SPACING_FACTOR = 0.75
+_RING_RADIUS_GROWTH_FACTOR = 1.25
+_RING_MINIMUM_RADIUS_PADDING_FACTOR = 0.85
+_RING_MAXIMUM_RADIUS_PADDING_FACTOR = 1.25
+_RING_INITIAL_ANGLE = math.pi
+
+
+class _HomeRingLayout(Gtk.Fixed):
+    """Sugar's classic home ring, ported from jarabe's RingLayout.
+
+    A center widget sits in the middle; item widgets are laid out on a
+    ring around it, falling back to Sugar's spiral when the ring would
+    not fit the allocated height.
+    """
+
+    def __init__(self):
+        Gtk.Fixed.__init__(self)
+        self._center = None
+        self.items = []
+        self._spiral_mode = False
+        self._placed = {}
+
+    def set_center(self, widget):
+        if self._center is not None:
+            self.remove(self._center)
+        self._center = widget
+        if widget is not None:
+            self.put(widget, 0, 0)
+            widget.show()
+        self._placed = {}
+        self._layout_now()
+
+    def set_items(self, widgets):
+        for child in self.items:
+            self.remove(child)
+        self.items = list(widgets)
+        for child in self.items:
+            self.put(child, 0, 0)
+            child.show()
+        self._placed = {}
+        self._layout_now()
+
+    def _layout_now(self):
+        """Re-place children immediately when they change.
+
+        GTK does not re-emit size-allocate when the container's
+        rectangle is unchanged, so adding items to an already-shown
+        ring must trigger the layout by hand.
+        """
+        self.queue_resize()
+        if self.get_allocated_width() > 1:
+            self._layout_children(self.get_allocation())
+
+    def _calculate_maximum_radius(self, icon_size, height):
+        radius = (height - style.GRID_CELL_SIZE) / 2 - \
+            style.DEFAULT_SPACING
+        return radius - (icon_size * _RING_MAXIMUM_RADIUS_PADDING_FACTOR)
+
+    def _calculate_radius_and_icon_size(self, children_count, height):
+        self._spiral_mode = False
+
+        icon_size = style.MEDIUM_ICON_SIZE
+        angle_, radius = self._calculate_angle_and_radius(
+            children_count, icon_size)
+        if radius <= self._calculate_maximum_radius(icon_size, height):
+            return radius, icon_size
+        while radius > self._calculate_maximum_radius(icon_size, height):
+            icon_size -= 1
+            if icon_size <= style.STANDARD_ICON_SIZE:
+                break
+            angle_, radius = self._calculate_angle_and_radius(
+                children_count, icon_size)
+        if radius <= self._calculate_maximum_radius(icon_size, height):
+            return radius, icon_size
+
+        self._spiral_mode = True
+        icon_size = style.MEDIUM_ICON_SIZE
+        while radius > self._calculate_maximum_radius(icon_size, height):
+            if icon_size < style.SMALL_ICON_SIZE:
+                break
+            angle_, radius = self._calculate_angle_and_radius(
+                children_count, icon_size)
+            icon_size -= 1
+        return radius, icon_size
+
+    def _calculate_angle_and_radius(self, icon_count, icon_size):
+        if self._spiral_mode:
+            icon_spacing_factor = _SPIRAL_SPACING_FACTOR
+        else:
+            icon_spacing_factor = _RING_SPACING_FACTOR
+
+        # The diagonal width of an icon stabilises the spacing across a
+        # wide range of circle and spiral sizes (same trick as Sugar).
+        icon_spacing = math.sqrt(icon_size ** 2 * 2) * \
+            icon_spacing_factor + style.DEFAULT_SPACING
+        angle = _RING_INITIAL_ANGLE
+        radius = _RING_MINIMUM_RADIUS + \
+            (icon_spacing * _RING_MINIMUM_RADIUS_PADDING_FACTOR)
+        for i_ in range(icon_count):
+            circumference = radius * 2 * math.pi
+            n = circumference / icon_spacing
+            angle += (2 * math.pi / n)
+            radius += (float(icon_spacing) *
+                       _RING_RADIUS_GROWTH_FACTOR / n)
+        return angle, radius
+
+    def _calculate_position(self, radius, icon_size, icon_index,
+                            children_count, width, height):
+        if self._spiral_mode:
+            angle, radius = self._calculate_angle_and_radius(
+                icon_index, icon_size)
+            x = int(math.sin(angle) * radius)
+            y = int(math.cos(angle) * radius)
+            x = - x + (width - icon_size) / 2
+            y = y + (height - icon_size -
+                     (style.GRID_CELL_SIZE / 2)) / 2
+        else:
+            angle = icon_index * (2 * math.pi / children_count) - \
+                math.pi / 2
+            x = radius * math.cos(angle) + (width - icon_size) / 2
+            y = radius * math.sin(angle) + \
+                (height - icon_size - (style.GRID_CELL_SIZE / 2)) / 2
+        return int(x), int(y)
+
+    def do_size_allocate(self, allocation):
+        # Reposition children BEFORE chaining up: GTK3 ignores resize
+        # requests queued from inside the allocation cycle, so moving
+        # after the fact leaves icons at stale positions.
+        self._layout_children(allocation)
+        Gtk.Fixed.do_size_allocate(self, allocation)
+
+    def _layout_children(self, allocation):
+        width = allocation.width
+        height = allocation.height
+        if width <= 1 or height <= 1:
+            return
+
+        count = len(self.items)
+        if count:
+            radius, icon_size = self._calculate_radius_and_icon_size(
+                count, height)
+            for index, child in enumerate(self.items):
+                try:
+                    if child.props.pixel_size != icon_size:
+                        child.props.pixel_size = icon_size
+                except AttributeError:
+                    pass
+                x, y = self._calculate_position(
+                    radius, icon_size, index, count, width, height)
+                self._move_child(child, x, y)
+
+        if self._center is not None:
+            center_width = self._center.get_preferred_width()[0]
+            center_height = self._center.get_preferred_height()[0]
+            x = (width - center_width) / 2
+            y = (height - style.GRID_CELL_SIZE / 2) / 2 - \
+                center_height / 2
+            self._move_child(self._center, x, y)
+
+    def _move_child(self, child, x, y):
+        position = (int(x), int(y))
+        if self._placed.get(child) != position:
+            self._placed[child] = position
+            self.move(child, position[0], position[1])
 
 
 class CreateAIActivityPanel(Gtk.EventBox):
@@ -234,10 +405,10 @@ class CreateAIActivityPanel(Gtk.EventBox):
             'Example: "Create a fractions playground where teams build '
             'and explain models."')
         self._is_fullscreen = False
-        self._home_flowbox = None
+        self._home_ring = None
+        self._home_ring_icons = []
         self._home_empty_box = None
         self._home_status_label = None
-        self._home_scroll = None
 
         box = Gtk.VBox(spacing=style.zoom(8))
         box.set_border_width(style.zoom(10))
@@ -325,8 +496,8 @@ class CreateAIActivityPanel(Gtk.EventBox):
         title.show()
 
         subtitle = Gtk.Label(
-            _('Everything you have generated. Click one to open it, or '
-              'press Modify to keep working on it.'))
+            _('Everything you have generated, around your XO. Click an '
+              'icon to open it; hover or right-click for Modify.'))
         subtitle.get_style_context().add_class('create-ai-subtitle')
         subtitle.set_halign(Gtk.Align.START)
         subtitle.set_line_wrap(True)
@@ -343,24 +514,11 @@ class CreateAIActivityPanel(Gtk.EventBox):
         content.pack_start(status, False, False, 0)
         status.show()
 
-        scroll = Gtk.ScrolledWindow()
-        self._home_scroll = scroll
-        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        content.pack_start(scroll, True, True, 0)
-
-        flowbox = Gtk.FlowBox()
-        self._home_flowbox = flowbox
-        flowbox.set_selection_mode(Gtk.SelectionMode.NONE)
-        flowbox.set_valign(Gtk.Align.START)
-        flowbox.set_min_children_per_line(2)
-        flowbox.set_max_children_per_line(4)
-        flowbox.set_homogeneous(True)
-        flowbox.set_column_spacing(style.zoom(16))
-        flowbox.set_row_spacing(style.zoom(16))
-        flowbox.set_margin_top(style.zoom(6))
-        scroll.add(flowbox)
-        flowbox.show()
-        scroll.show()
+        ring = _HomeRingLayout()
+        self._home_ring = ring
+        ring.set_center(self._create_home_center_icon())
+        content.pack_start(ring, True, True, 0)
+        ring.show()
 
         empty = Gtk.VBox(spacing=style.zoom(12))
         self._home_empty_box = empty
@@ -400,83 +558,108 @@ class CreateAIActivityPanel(Gtk.EventBox):
         content.connect('map', self.__home_mapped_cb)
         return content
 
-    def _create_home_project_tile(self, project):
-        tile = Gtk.EventBox()
-        tile.get_style_context().add_class('create-ai-home-tile')
-        tile.set_visible_window(True)
-        tile.set_above_child(False)
-        tile.add_events(Gdk.EventMask.ENTER_NOTIFY_MASK |
-                        Gdk.EventMask.LEAVE_NOTIFY_MASK |
-                        Gdk.EventMask.BUTTON_RELEASE_MASK)
-        tile.connect('enter-notify-event', self.__home_tile_enter_cb)
-        tile.connect('leave-notify-event', self.__home_tile_leave_cb)
-        tile.connect('button-release-event',
-                     self.__home_tile_released_cb, project)
-        tile.set_size_request(style.zoom(280), style.zoom(190))
+    def _create_home_center_icon(self):
+        xo_color = None
+        try:
+            from sugar3.profile import get_color
+            xo_color = get_color()
+        except Exception:
+            logging.debug('Could not read profile color', exc_info=True)
+        if xo_color is None:
+            try:
+                from sugar3.graphics.xocolor import XoColor
+                xo_color = XoColor(None)
+            except Exception:
+                xo_color = None
 
-        box = Gtk.VBox(spacing=style.zoom(6))
-        box.set_border_width(style.zoom(14))
-        tile.add(box)
-        box.show()
-
-        if project['icon_path']:
-            icon = Icon(pixel_size=style.zoom(64))
-            icon.props.file = project['icon_path']
-        else:
-            icon = Icon(icon_name='computer-xo',
-                        pixel_size=style.zoom(64))
-        icon.set_halign(Gtk.Align.CENTER)
-        box.pack_start(icon, False, False, 0)
+        kwargs = {
+            'icon_name': 'computer-xo',
+            'pixel_size': style.XLARGE_ICON_SIZE,
+        }
+        if xo_color is not None:
+            kwargs['xo_color'] = xo_color
+        icon = CanvasIcon(**kwargs)
+        icon.set_tooltip_text(_('Create a new activity'))
+        icon.connect('button-release-event',
+                     self.__home_center_release_cb)
         icon.show()
+        return icon
 
-        name = Gtk.Label(project['name'])
-        name.get_style_context().add_class('create-ai-home-title')
-        name.set_ellipsize(Pango.EllipsizeMode.END)
-        name.set_max_width_chars(24)
-        name.set_justify(Gtk.Justification.CENTER)
-        box.pack_start(name, False, False, 0)
-        name.show()
+    def _create_home_ring_icon(self, project):
+        if project['icon_path']:
+            icon = CanvasIcon(file_name=project['icon_path'],
+                              pixel_size=style.STANDARD_ICON_SIZE,
+                              cache=True)
+        else:
+            icon = CanvasIcon(icon_name='computer-xo',
+                              pixel_size=style.STANDARD_ICON_SIZE,
+                              cache=True)
+        icon.connect('button-release-event',
+                     self.__home_icon_release_cb, project)
 
-        caption = Gtk.Label('%s · %s' % (
+        caption = '%s · %s' % (
             project['template'] or _('activity'),
             time.strftime('%b %d, %Y',
-                          time.localtime(project['mtime']))))
-        caption.get_style_context().add_class('create-ai-home-caption')
-        caption.set_ellipsize(Pango.EllipsizeMode.END)
-        box.pack_start(caption, False, False, 0)
-        caption.show()
+                          time.localtime(project['mtime'])))
+        if not self._attach_home_icon_palette(icon, project, caption):
+            icon.set_tooltip_text(
+                '%s\n%s' % (project['name'], caption))
+        icon.show()
+        return icon
 
-        modify = Gtk.Button(_('Modify'))
-        modify.get_style_context().add_class('create-ai-home-modify')
-        modify.set_halign(Gtk.Align.CENTER)
-        modify.connect('clicked', self.__home_modify_clicked_cb, project)
-        box.pack_end(modify, False, False, 0)
-        modify.show()
+    def _attach_home_icon_palette(self, icon, project, caption):
+        """Give a ring icon Sugar's hover/right-click palette.
 
-        tile.show()
-        return tile
+        Returns False when the palette stack is unavailable so the
+        caller can fall back to a plain tooltip.
+        """
+        try:
+            from sugar3.graphics.palette import Palette
+            from sugar3.graphics.palettemenu import PaletteMenuBox
+            from sugar3.graphics.palettemenu import PaletteMenuItem
+
+            palette = Palette(project['name'])
+            palette.props.secondary_text = caption
+
+            menu_box = PaletteMenuBox()
+            open_item = PaletteMenuItem(text_label=_('Open'))
+            open_item.connect('activate',
+                              self.__home_palette_open_cb, project)
+            menu_box.append_item(open_item)
+            modify_item = PaletteMenuItem(text_label=_('Modify'))
+            modify_item.connect('activate',
+                                self.__home_palette_modify_cb, project)
+            menu_box.append_item(modify_item)
+            menu_box.show_all()
+            palette.set_content(menu_box)
+
+            icon.set_palette(palette)
+            icon.connect_to_palette_pop_events(palette)
+            return True
+        except Exception:
+            logging.debug('Palette unavailable for home icons',
+                          exc_info=True)
+            return False
 
     def _refresh_home_projects(self):
-        if self._home_flowbox is None:
+        if self._home_ring is None:
             return
 
         from aodstudio.model.aodprojects import list_generated_projects
 
-        for child in self._home_flowbox.get_children():
-            self._home_flowbox.remove(child)
-
         projects = list_generated_projects()
-        for project in projects:
-            self._home_flowbox.add(
-                self._create_home_project_tile(project))
+        icons = [self._create_home_ring_icon(project)
+                 for project in projects]
+        self._home_ring_icons = icons
+        self._home_ring.set_items(icons)
 
         if self._home_status_label is not None:
             self._home_status_label.set_text('')
         if projects:
-            self._home_scroll.show()
+            self._home_ring.show()
             self._home_empty_box.hide()
         else:
-            self._home_scroll.hide()
+            self._home_ring.hide()
             self._home_empty_box.show()
 
     def _go_home(self):
@@ -3586,41 +3769,6 @@ class CreateAIActivityPanel(Gtk.EventBox):
             }
             .create-ai-stage-card-hover label {
                 color: %(toolbar)s;
-            }
-            .create-ai-home-tile {
-                background-color: %(studio_surface)s;
-                border: 1px solid %(studio_edge)s;
-                border-radius: 12px;
-                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.10);
-            }
-            .create-ai-home-tile-hover {
-                background-color: %(studio_lavender_soft)s;
-                border: 1px solid %(studio_lavender_border)s;
-                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.14);
-            }
-            .create-ai-home-title {
-                color: #222;
-                font-weight: 700;
-                font-size: 13px;
-            }
-            .create-ai-home-caption {
-                color: #8a8a8a;
-                font-size: 10px;
-            }
-            button.create-ai-home-modify {
-                border-radius: 10px;
-                border: 1px solid #e3e3e3;
-                background-image: none;
-                background-color: #fafafa;
-                padding: 3px 14px;
-                min-height: 0;
-            }
-            button.create-ai-home-modify label {
-                color: #333333;
-            }
-            button.create-ai-home-modify:hover {
-                background-color: %(studio_lavender_soft)s;
-                border-color: %(studio_lavender_border)s;
             }
             .create-ai-home-empty {
                 padding: 30px;
@@ -9056,24 +9204,22 @@ if clipboard.wait_is_text_available():
     def __home_mapped_cb(self, widget):
         self._refresh_home_projects()
 
-    def __home_tile_enter_cb(self, tile, event):
-        if event.mode == Gdk.CrossingMode.NORMAL:
-            tile.get_style_context().add_class('create-ai-home-tile-hover')
-        return False
-
-    def __home_tile_leave_cb(self, tile, event):
-        tile.get_style_context().remove_class('create-ai-home-tile-hover')
-        return False
-
-    def __home_tile_released_cb(self, tile, event, project):
+    def __home_icon_release_cb(self, icon, event, project):
         if event.button != 1:
             return False
-        alloc = tile.get_allocation()
-        if 0 < event.x < alloc.width and 0 < event.y < alloc.height:
-            self._launch_generated_project(project)
+        self._launch_generated_project(project)
         return False
 
-    def __home_modify_clicked_cb(self, button, project):
+    def __home_center_release_cb(self, icon, event):
+        if event.button != 1:
+            return False
+        self.__home_create_new_cb(None)
+        return False
+
+    def __home_palette_open_cb(self, item, project):
+        self._launch_generated_project(project)
+
+    def __home_palette_modify_cb(self, item, project):
         self._open_project_in_studio(project)
 
     def _launch_generated_project(self, project):

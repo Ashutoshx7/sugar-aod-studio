@@ -105,7 +105,7 @@ pump()
 
 assert panel._stack.get_visible_child_name() == 'home'
 assert panel._home_empty_box.get_visible()
-assert len(panel._home_flowbox.get_children()) == 0
+assert len(panel._home_ring_icons) == 0
 
 panel._CreateAIActivityPanel__home_create_new_cb(None)
 pump()
@@ -127,7 +127,8 @@ with open(os.path.join(project_dir, 'activity', 'activity.svg'), 'w',
 
 panel._refresh_home_projects()
 pump()
-assert len(panel._home_flowbox.get_children()) == 1
+assert len(panel._home_ring_icons) == 1
+assert panel._home_ring.get_visible()
 assert not panel._home_empty_box.get_visible()
 
 window.destroy()
