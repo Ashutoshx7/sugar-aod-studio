@@ -594,7 +594,7 @@ def assemble_project(spec, plan, output_root, activity_source=None):
         'aod_plan.json': json.dumps(plan, indent=2, sort_keys=True) + '\n',
         os.path.join('activity', 'activity.info'):
             _render_activity_info(spec, plan),
-        os.path.join('activity', 'activity.svg'): _ACTIVITY_ICON,
+        os.path.join('activity', 'activity.svg'): _activity_icon(plan),
     }
 
     for relative_path, content in files.items():
@@ -1059,6 +1059,16 @@ from sugar3.activity import bundlebuilder
 if __name__ == '__main__':
     bundlebuilder.start()
 """
+
+
+def _activity_icon(plan):
+    """Per-activity icon, falling back to the classic checkmark."""
+    try:
+        from generation.icons import render_activity_icon
+        return render_activity_icon(plan)
+    except Exception:
+        return _ACTIVITY_ICON
+
 
 _ACTIVITY_ICON = """<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg"

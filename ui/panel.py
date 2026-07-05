@@ -394,24 +394,26 @@ class CreateAIActivityPanel(Gtk.EventBox):
         content.connect('map', self.__home_mapped_cb)
         return content
 
-    def _create_home_center_icon(self):
-        xo_color = None
+    def _home_xo_color(self):
         try:
             from sugar3.profile import get_color
-            xo_color = get_color()
+            color = get_color()
+            if color is not None:
+                return color
         except Exception:
             logging.debug('Could not read profile color', exc_info=True)
-        if xo_color is None:
-            try:
-                from sugar3.graphics.xocolor import XoColor
-                xo_color = XoColor(None)
-            except Exception:
-                xo_color = None
+        try:
+            from sugar3.graphics.xocolor import XoColor
+            return XoColor(None)
+        except Exception:
+            return None
 
+    def _create_home_center_icon(self):
         kwargs = {
             'icon_name': 'computer-xo',
             'pixel_size': style.XLARGE_ICON_SIZE,
         }
+        xo_color = self._home_xo_color()
         if xo_color is not None:
             kwargs['xo_color'] = xo_color
         icon = CanvasIcon(**kwargs)
@@ -422,14 +424,17 @@ class CreateAIActivityPanel(Gtk.EventBox):
         return icon
 
     def _create_home_ring_icon(self, project):
+        kwargs = {
+            'pixel_size': style.STANDARD_ICON_SIZE,
+            'cache': True,
+        }
+        xo_color = self._home_xo_color()
+        if xo_color is not None:
+            kwargs['xo_color'] = xo_color
         if project['icon_path']:
-            icon = CanvasIcon(file_name=project['icon_path'],
-                              pixel_size=style.STANDARD_ICON_SIZE,
-                              cache=True)
+            icon = CanvasIcon(file_name=project['icon_path'], **kwargs)
         else:
-            icon = CanvasIcon(icon_name='computer-xo',
-                              pixel_size=style.STANDARD_ICON_SIZE,
-                              cache=True)
+            icon = CanvasIcon(icon_name='computer-xo', **kwargs)
         icon.connect('button-release-event',
                      self.__home_icon_release_cb, project)
 
