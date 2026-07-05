@@ -18,6 +18,10 @@ Sugar-activity-on-Demand/
 │   ├── codegen.py     code-generation prompts and response extraction
 │   ├── generator.py   plan normalization, project assembly, .xo packaging
 │   ├── validator.py   safety + quality validation of generated code
+│   ├── runtime_check.py  runs candidate code in a GTK subprocess gate
+│   ├── runtime_harness.py  subprocess body for the runtime gate
+│   ├── critic.py      one self-review round over accepted code
+│   ├── icons.py       per-activity SVG icons in Sugar XO colors
 │   ├── refine.py      SEARCH/REPLACE refinement patches
 │   └── templates.py   local template renderer (offline fallback)
 ├── service/           background execution and persistence
@@ -46,6 +50,29 @@ A test (`tests/test_studio.py`) enforces that no `jarabe` (Sugar
 shell) module is ever imported: the studio depends on the Sugar
 *toolkit* only.
 
+## How generated code is accepted
+
+Provider code passes through three gates before a learner sees it:
+
+1. **Static validation** (`validator.py`) — structure, safety, and
+   request-specific quality checks. Errors reject the attempt;
+   warnings ride along as "Also consider" hints on retries.
+2. **Runtime gate** (`runtime_check.py` + `runtime_harness.py`) —
+   the candidate actually runs in a sandboxed GTK subprocess on the
+   preview stubs: start, pump events, Journal write/read round-trip.
+   Crashes, degraded startup, or a blocking `__init__` become retry
+   feedback for the model. Skipped without a display;
+   `AOD_RUNTIME_CHECK=off` disables, `AOD_RUNTIME_CHECK_TIMEOUT`
+   tunes the limit (default 25 s).
+3. **Critic round** (`critic.py`) — the model reviews its own
+   accepted code once against a checklist (wired handlers, reachable
+   win logic, real Journal state) and replies `OK` or minimal
+   SEARCH/REPLACE fixes. Patched code must re-pass gates 1 and 2 or
+   the original is kept. `AOD_CRITIC=off` disables.
+
+Outcomes are recorded in the saved plan under `runtime_check` and
+`critic`.
+
 ## Correspondence with the Sugar shell fork
 
 The same experience runs embedded in the
@@ -68,6 +95,10 @@ the two:
 | `model/aodrag.py` | `generation/rag.py` |
 | `model/aodrefine.py` | `generation/refine.py` |
 | `model/aodvalidator.py` | `generation/validator.py` |
+| `model/aodruntime.py` | `generation/runtime_check.py` |
+| `model/aodruntimeharness.py` | `generation/runtime_harness.py` |
+| `model/aodcritic.py` | `generation/critic.py` |
+| `model/aodicons.py` | `generation/icons.py` |
 | `model/aodtemplates.py` | `generation/templates.py` |
 | `model/aodservice.py` | `service/service.py` |
 | `model/aodjobs.py` | `service/jobs.py` |

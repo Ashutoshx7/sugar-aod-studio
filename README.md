@@ -34,7 +34,7 @@
 > Runs on any Linux desktop. **No Sugar shell required.**
 
 <p align="center">
-  <sub><b>idea</b> → ✨ enhance → plan · RAG → generate → validate → <b>preview</b> → refine → <b>export</b></sub>
+  <sub><b>idea</b> → ✨ enhance → plan · RAG → generate → validate → run ✓ → self-review → <b>preview</b> → refine → <b>export</b></sub>
 </p>
 
 ## Features
@@ -53,6 +53,12 @@
   plans with your chosen model, generates `activity.py`, and validates
   it (syntax, Sugar API misuse, import safety, request match) with
   automatic retry-and-fix rounds.
+- ✅ **Runtime-proven code** — every candidate is actually *run* in a
+  sandboxed subprocess — started, event-pumped, saved and restored —
+  before it is accepted; a crash comes back to the model as fix-it
+  feedback. The model then reviews its own accepted code once for
+  weak spots (dead buttons, unreachable win logic) and patches them.
+  Every activity gets its own icon, drawn in your XO colors.
 - 🖼️ **Live preview** — the generated activity runs embedded in the
   studio. Click any part of the preview and describe a change;
   refinements land as minimal patches with full version history.
@@ -133,7 +139,7 @@ call the provider you chose.
 ## Development
 
 ```sh
-python3 -m pytest tests/ -q     # 150 tests: pipeline, providers, UI smoke
+python3 -m pytest tests/ -q     # 174 tests: pipeline, providers, UI smoke
 python3 -m flake8 core llm generation service exports preview ui main.py
 ```
 
