@@ -92,8 +92,8 @@ sudo apt install python3-gi gir1.2-gtk-3.0 python3-sugar3 sugar-toolkit-gtk3
 **From a checkout** (no install):
 
 ```sh
-git clone https://github.com/Ashutoshx7/sugar-aod-studio.git
-cd sugar-aod-studio
+git clone https://github.com/Ashutoshx7/Sugar-activity-on-Demand.git
+cd Sugar-activity-on-Demand
 python3 bin/sugar-aod-studio        # or: python3 -m aodstudio
 ```
 
