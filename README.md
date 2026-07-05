@@ -146,10 +146,11 @@ python3 -m pytest tests/ -q     # 150 tests: pipeline, providers, UI smoke
 python3 -m flake8 aodstudio/
 ```
 
-`aodstudio/model/` is the shell-free backend (planning, RAG, LLM
-providers, code generation, validation, packaging, sessions);
-`aodstudio/ui/` is the GTK front end (`panel.py` hosts the whole
-studio, `window.py` wraps it); `bin/sugar-aod-studio` is the launcher.
+The package is organized by domain — `core/` (spec, licenses,
+projects), `llm/` (providers, credentials, prompt enhancement),
+`generation/` (pipeline, RAG, codegen, validation, refinement),
+`service/` (job queue, sessions), `packaging/`, `preview/`, and `ui/`.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full map.
 A test enforces that no `jarabe` (Sugar shell) module is ever imported.
 
 ## Provenance

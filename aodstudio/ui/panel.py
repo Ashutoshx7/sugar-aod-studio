@@ -471,7 +471,7 @@ class CreateAIActivityPanel(Gtk.EventBox):
         if self._generation_job_id is None:
             return
 
-        from aodstudio.model.aodservice import get_service
+        from aodstudio.service.service import get_service
 
         service = get_service()
         job_id = self._generation_job_id
@@ -650,7 +650,7 @@ class CreateAIActivityPanel(Gtk.EventBox):
         if self._home_ring is None:
             return
 
-        from aodstudio.model.aodprojects import list_generated_projects
+        from aodstudio.core.projects import list_generated_projects
 
         projects = list_generated_projects()
         icons = [self._create_home_ring_icon(project)
@@ -1101,8 +1101,8 @@ class CreateAIActivityPanel(Gtk.EventBox):
                     _('Type your idea first, then press Enhance'))
             return
 
-        from aodstudio.model.aodllm import get_configured_provider
-        from aodstudio.model.aodllm import normalize_provider_name
+        from aodstudio.llm.providers import get_configured_provider
+        from aodstudio.llm.providers import normalize_provider_name
 
         provider_name = normalize_provider_name(
             self._selected_options.get('provider', 'default'))
@@ -1126,7 +1126,7 @@ class CreateAIActivityPanel(Gtk.EventBox):
                 _('Enhancing your idea...'))
 
         def worker():
-            from aodstudio.model.aodenhance import enhance_prompt
+            from aodstudio.llm.enhance import enhance_prompt
             text, enhanced = enhance_prompt(provider, prompt)
             GObject.idle_add(self.__enhance_finished_cb, text, enhanced)
 
@@ -1315,7 +1315,7 @@ class CreateAIActivityPanel(Gtk.EventBox):
 
     def _initial_provider_option(self):
         try:
-            from aodstudio.model.aodservice import get_service
+            from aodstudio.service.service import get_service
 
             provider_name = get_service().preferred_provider_name()
         except Exception:
@@ -2759,7 +2759,7 @@ class CreateAIActivityPanel(Gtk.EventBox):
         if not self._aod_session_id:
             return []
 
-        from aodstudio.model.aodservice import get_service
+        from aodstudio.service.service import get_service
 
         session = get_service().get_session(self._aod_session_id)
         if session is None:
@@ -5352,7 +5352,7 @@ class CreateAIActivityPanel(Gtk.EventBox):
                   'key.'))
             return
 
-        from aodstudio.model.aodservice import get_service
+        from aodstudio.service.service import get_service
 
         try:
             status = get_service().provider_credential_status(provider_name)
@@ -5393,9 +5393,9 @@ class CreateAIActivityPanel(Gtk.EventBox):
                 _('Local template generation is ready.'))
             return True
 
-        from aodstudio.model.aodcredentials import CredentialStoreError
-        from aodstudio.model.aodllm import ProviderError
-        from aodstudio.model.aodservice import get_service
+        from aodstudio.llm.credentials import CredentialStoreError
+        from aodstudio.llm.providers import ProviderError
+        from aodstudio.service.service import get_service
 
         api_key = self._provider_key_entry.get_text().strip()
         model = self._provider_model_entry.get_text().strip()
@@ -6242,7 +6242,7 @@ if clipboard.wait_is_text_available():
             return False
 
         try:
-            from aodstudio.model.aodpreview import render_activity_preview
+            from aodstudio.preview.runner import render_activity_preview
             preview, canvas, toolbar = render_activity_preview(
                 project_path,
                 getattr(result.spec, 'name', '') or _('Generated Activity'),
@@ -7919,7 +7919,7 @@ if clipboard.wait_is_text_available():
                 'opencode', 'opencode-go', 'claude'):
             return
 
-        from aodstudio.model.aodservice import get_service
+        from aodstudio.service.service import get_service
 
         try:
             get_service().remove_provider_api_key(provider_name)
@@ -8058,8 +8058,8 @@ if clipboard.wait_is_text_available():
         self._submit_generation_from_prompt(prompt, chat_prompt=prompt)
 
     def _submit_generation_from_prompt(self, prompt, chat_prompt=None):
-        from aodstudio.model.aodspec import ActivitySpec
-        from aodstudio.model.aodspec import name_from_prompt
+        from aodstudio.core.spec import ActivitySpec
+        from aodstudio.core.spec import name_from_prompt
 
         license_info = self._get_selected_license()
 
@@ -8146,7 +8146,7 @@ if clipboard.wait_is_text_available():
         )
 
     def _build_refinement_spec(self, refinement):
-        from aodstudio.model.aodspec import ActivitySpec
+        from aodstudio.core.spec import ActivitySpec
 
         result = self._generation_result
         base_spec = result.spec.normalized()
@@ -8256,7 +8256,7 @@ if clipboard.wait_is_text_available():
                 _('Please wait for the current activity generation to finish.'))
             return
 
-        from aodstudio.model.aodservice import get_service
+        from aodstudio.service.service import get_service
 
         license_info = self._get_selected_license()
         planner = self._selected_options['planner']
@@ -8385,7 +8385,7 @@ if clipboard.wait_is_text_available():
         if self._generation_job_id is None:
             return False
 
-        from aodstudio.model.aodservice import get_service
+        from aodstudio.service.service import get_service
 
         job = get_service().get_job(self._generation_job_id)
         return job is not None and not job.is_terminal()
@@ -8397,10 +8397,10 @@ if clipboard.wait_is_text_available():
         if job_id != self._generation_job_id:
             return False
 
-        from aodstudio.model.aodjobs import STATUS_CANCELLED
-        from aodstudio.model.aodjobs import STATUS_FAILED
-        from aodstudio.model.aodjobs import STATUS_FINISHED
-        from aodstudio.model.aodservice import get_service
+        from aodstudio.service.jobs import STATUS_CANCELLED
+        from aodstudio.service.jobs import STATUS_FAILED
+        from aodstudio.service.jobs import STATUS_FINISHED
+        from aodstudio.service.service import get_service
 
         job = get_service().get_job(job_id)
         if job is None:
@@ -8890,7 +8890,7 @@ if clipboard.wait_is_text_available():
             self._prompt_status_label.set_text(_('Packaging XO...'))
         self._append_chat_status(_('Packaging XO bundle...'))
 
-        from aodstudio.model.aodpipeline import package_generation_result
+        from aodstudio.generation.pipeline import package_generation_result
 
         bundle_path = package_generation_result(self._generation_result)
         self._append_chat_status(_('XO bundle packaged.'))
@@ -8956,7 +8956,7 @@ if clipboard.wait_is_text_available():
 
         self._selected_options['license'] = selected
 
-        from aodstudio.model.aodpipeline import reapply_generation_license
+        from aodstudio.generation.pipeline import reapply_generation_license
 
         license_info = self._get_selected_license()
         try:
@@ -9054,7 +9054,7 @@ if clipboard.wait_is_text_available():
         worker.start()
 
     def _flatpak_export_worker(self, result):
-        from aodstudio.model.aodflatpak import package_flatpak
+        from aodstudio.packaging.flatpak import package_flatpak
 
         try:
             export = package_flatpak(result)
@@ -9379,10 +9379,10 @@ if clipboard.wait_is_text_available():
                 _('Opening %s...') % project['name'])
 
     def _open_project_in_studio(self, project):
-        from aodstudio.model.aodgenerator import restore_generation_result
-        from aodstudio.model.aodprojects import build_spec_from_plan
-        from aodstudio.model.aodprojects import find_session_for_project
-        from aodstudio.model.aodservice import get_service
+        from aodstudio.generation.generator import restore_generation_result
+        from aodstudio.core.projects import build_spec_from_plan
+        from aodstudio.core.projects import find_session_for_project
+        from aodstudio.service.service import get_service
 
         session = None
         revision = None
