@@ -107,6 +107,9 @@ assert panel._stack.get_visible_child_name() == 'home'
 assert panel._home_empty_box.get_visible()
 assert len(panel._home_ring_icons) == 0
 
+assert panel._enhance_button is not None
+assert panel._selected_options['enhance'] == 'on'
+
 panel._CreateAIActivityPanel__home_create_new_cb(None)
 pump()
 assert panel._stack.get_visible_child_name() == 'choose'
