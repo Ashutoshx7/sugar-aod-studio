@@ -77,6 +77,32 @@ class TestActivityIcons(unittest.TestCase):
         svg = render_activity_icon({'name': None, 'template': 12345})
         self.assertIn('&stroke_color;', svg)
 
+    def test_concept_keyword_overrides_template_glyph(self):
+        # A space game should read as a rocket, not the generic games glyph.
+        rocket = render_activity_icon(
+            {'name': 'Space Racer', 'template': 'games'})
+        plain = render_activity_icon(
+            {'name': 'Team Match', 'template': 'games'})
+        self.assertNotEqual(rocket, plain)
+
+    def test_concept_keyword_matches_whole_words_only(self):
+        from generation.icons import _concept_glyph
+        # "Start" must NOT trip the "star" concept glyph.
+        self.assertIsNone(_concept_glyph({'name': 'Start Writing'}))
+        self.assertEqual('star', _concept_glyph({'name': 'Star Map'}))
+        self.assertEqual(
+            'rocket',
+            _concept_glyph({'name': 'A', 'summary': 'A space race game'}))
+        self.assertIsNone(_concept_glyph({'name': 'Team Match'}))
+
+    def test_concept_reads_from_word_bank_and_sanitizes(self):
+        svg = render_activity_icon(
+            {'name': 'Counter', 'template': 'grid',
+             'word_bank': ['flower', 'petal', 'garden']})
+        # New concept glyphs are still valid, colorizable Sugar icons.
+        self.assertIsNotNone(sanitize_icon_svg(svg))
+        self.assertIn('viewBox="0 0 55 55"', svg)
+
 
 class TestSanitizeIconSvg(unittest.TestCase):
 

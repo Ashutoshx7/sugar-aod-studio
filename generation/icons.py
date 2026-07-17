@@ -113,6 +113,53 @@ _GLYPHS = {
         '    <path d="M23 19 L37 27.5 L23 36 Z" '
         'fill="&stroke_color;"/>\n'
     ),
+    'rocket': (
+        '    <path d="M27.5 8 C34 14 36 26 33 36 L22 36 C19 26 21 14 '
+        '27.5 8 Z" ' + _SF + ' stroke-width="3" '
+        'stroke-linejoin="round"/>\n'
+        '    <circle cx="27.5" cy="22" r="3.5" fill="&stroke_color;"/>\n'
+        '    <path d="M22 34 L15 45 L23 40 M33 34 L40 45 L32 40" '
+        'fill="none" ' + _S + ' stroke-width="2.5" '
+        'stroke-linejoin="round"/>\n'
+    ),
+    'star': (
+        '    <path d="M27.5 8 L33 22 L48 22 L36 31 L41 46 L27.5 37 '
+        'L14 46 L19 31 L7 22 L22 22 Z" ' + _SF + ' stroke-width="3" '
+        'stroke-linejoin="round"/>\n'
+    ),
+    'flower': (
+        '    <circle cx="27.5" cy="15" r="7" ' + _SF
+        + ' stroke-width="2.5"/>\n'
+        '    <circle cx="40" cy="27.5" r="7" ' + _SF
+        + ' stroke-width="2.5"/>\n'
+        '    <circle cx="27.5" cy="40" r="7" ' + _SF
+        + ' stroke-width="2.5"/>\n'
+        '    <circle cx="15" cy="27.5" r="7" ' + _SF
+        + ' stroke-width="2.5"/>\n'
+        '    <circle cx="27.5" cy="27.5" r="6" fill="&stroke_color;" '
+        + _S + ' stroke-width="2"/>\n'
+    ),
+    'clock': (
+        '    <circle cx="27.5" cy="27.5" r="18" ' + _SF
+        + ' stroke-width="3.5"/>\n'
+        '    <path d="M27.5 27.5 L27.5 15 M27.5 27.5 L37 31" '
+        'fill="none" ' + _S + ' stroke-width="3" '
+        'stroke-linecap="round"/>\n'
+    ),
+    'music': (
+        '    <path d="M22 12 L38 9 L38 34" fill="none" ' + _S
+        + ' stroke-width="3" stroke-linecap="round" '
+        'stroke-linejoin="round"/>\n'
+        '    <circle cx="17" cy="36" r="6" fill="&stroke_color;" '
+        + _S + ' stroke-width="2"/>\n'
+        '    <circle cx="33" cy="38" r="6" fill="&stroke_color;" '
+        + _S + ' stroke-width="2"/>\n'
+    ),
+    'heart': (
+        '    <path d="M27.5 45 C10 32 12 16 22 16 C27 16 27.5 21 27.5 21 '
+        'C27.5 21 28 16 33 16 C43 16 45 32 27.5 45 Z" ' + _SF
+        + ' stroke-width="3" stroke-linejoin="round"/>\n'
+    ),
     'default': (
         '    <circle cx="27.5" cy="27.5" r="18" ' + _SF
         + ' stroke-width="3.5"/>\n'
@@ -121,6 +168,23 @@ _GLYPHS = {
         'stroke-linejoin="round"/>\n'
     ),
 }
+
+# Concept keywords that pick a glyph for what the activity is ABOUT, before
+# falling back to the template/category glyph.  Matched against whole words in
+# the name, summary, and word bank so "start" never trips "star".
+_KEYWORD_GLYPHS = (
+    (frozenset({'rocket', 'space', 'planet', 'planets', 'astronaut',
+                'galaxy', 'spaceship', 'orbit'}), 'rocket'),
+    (frozenset({'star', 'stars', 'constellation'}), 'star'),
+    (frozenset({'flower', 'flowers', 'garden', 'plant', 'plants', 'petal',
+                'bloom', 'seed', 'seeds'}), 'flower'),
+    (frozenset({'clock', 'time', 'timer', 'hour', 'hours', 'minute',
+                'minutes', 'schedule'}), 'clock'),
+    (frozenset({'music', 'song', 'songs', 'melody', 'note', 'notes',
+                'rhythm', 'piano'}), 'music'),
+    (frozenset({'heart', 'hearts', 'health', 'feeling', 'feelings',
+                'emotion', 'emotions'}), 'heart'),
+)
 
 _CATEGORY_GLYPHS = {
     'science': 'science',
@@ -134,6 +198,20 @@ _CATEGORY_GLYPHS = {
 _ACCENTS = ((46, 8), (46, 46), (8, 46), (8, 8))
 
 
+def _concept_glyph(plan):
+    """Return a concept glyph key from the plan's words, or None."""
+    haystack = ' '.join((
+        str(plan.get('name') or ''),
+        str(plan.get('summary') or ''),
+        ' '.join(str(word) for word in (plan.get('word_bank') or ())),
+    )).lower()
+    tokens = set(re.findall(r'[a-z]+', haystack))
+    for keywords, glyph in _KEYWORD_GLYPHS:
+        if tokens & keywords:
+            return glyph
+    return None
+
+
 def render_activity_icon(plan):
     """Return a Sugar-style SVG icon for this plan; never raises."""
     try:
@@ -141,11 +219,16 @@ def render_activity_icon(plan):
         category = str(plan.get('category') or '')
         name = str(plan.get('name') or 'Activity')
 
-        glyph_key = 'default'
-        if template in _GLYPHS:
-            glyph_key = template
-        elif category in _CATEGORY_GLYPHS:
-            glyph_key = _CATEGORY_GLYPHS[category]
+        # Concept first (a "space race" gets a rocket, not a games glyph),
+        # then the template glyph, then the category glyph, then default.
+        glyph_key = _concept_glyph(plan)
+        if glyph_key is None:
+            if template in _GLYPHS:
+                glyph_key = template
+            elif category in _CATEGORY_GLYPHS:
+                glyph_key = _CATEGORY_GLYPHS[category]
+            else:
+                glyph_key = 'default'
 
         digest = int(
             hashlib.sha256(name.encode('utf-8')).hexdigest()[:8], 16)
@@ -213,12 +296,25 @@ def build_icon_user_prompt(spec, plan):
     if isinstance(plan, dict):
         kind = plan.get('activity_kind') or ''
         summary = plan.get('summary') or ''
+        goal = plan.get('learner_goal') or ''
         if kind:
             parts.append('What it is: %s\n' % kind)
         if summary:
             parts.append('Summary: %s\n' % summary)
+        if goal:
+            parts.append('What the learner does: %s\n' % goal)
+        # The word bank names the concrete things in the activity, which are
+        # exactly what a single clear visual metaphor should draw from.
+        words = [
+            str(word).strip() for word in (plan.get('word_bank') or ())
+            if str(word).strip()
+        ][:8]
+        if words:
+            parts.append('Key ideas to picture: %s\n' % ', '.join(words))
     parts.append('Learning area: %s\n' % getattr(spec, 'category', ''))
-    parts.append('\nReturn only the SVG.')
+    parts.append(
+        '\nPick the single most recognisable object from the ideas above and '
+        'draw just that.\nReturn only the SVG.')
     return ''.join(parts)
 
 
