@@ -232,7 +232,14 @@ class CreateAIActivityPanel(Gtk.EventBox):
         self._preview_is_fullscreen = False
         self._preview_fullscreen_button = None
         self._studio_left_panel = None
+        self._left_revealer = None
         self._studio_right_panel = None
+        self._body_paned = None
+        self._inner_paned = None
+        self._inner_paned_initialised = False
+        self._sidebar_saved_pos = None
+        self._left_saved_pos = None
+        self._paned_anim_ids = {}
         self._generation_result = None
         self._generation_job_id = None
         self._generation_job_callback = \
@@ -1248,26 +1255,34 @@ class CreateAIActivityPanel(Gtk.EventBox):
         workspace.add(studio)
         studio.show()
 
-        body = Gtk.HBox(spacing=style.zoom(14))
+        # Nested draggable panes: [ left chat | [ preview | sidebar ] ].
+        # The handles let the learner resize the chat and the learning
+        # sidebar live, and drive the collapse animations too.
+        body = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
         body.get_style_context().add_class('create-ai-studio-body')
+        self._body_paned = body
         studio.pack_start(body, True, True, 0)
         body.show()
 
+        # shrink=False keeps the side panes from ever being dragged
+        # narrower than their content — so text reflows within range
+        # instead of being clipped. The preview absorbs the slack.
         self._studio_left_panel = self._create_studio_left_panel()
-        body.pack_start(self._studio_left_panel, False, False, 0)
-        body.pack_start(self._create_studio_preview_panel(),
-                        True, True, 0)
+        body.pack1(self._studio_left_panel, False, False)
+
+        inner = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
+        self._inner_paned = inner
+        body.pack2(inner, True, False)
+        inner.show()
+
+        inner.pack1(self._create_studio_preview_panel(), True, True)
         self._studio_right_panel = self._create_learning_sidebar()
-        self._sidebar_revealer = Gtk.Revealer()
-        self._sidebar_revealer.set_transition_type(
-            Gtk.RevealerTransitionType.SLIDE_LEFT)
-        self._sidebar_revealer.set_transition_duration(260)
-        self._sidebar_revealer.add(self._studio_right_panel)
-        self._sidebar_revealer.set_reveal_child(True)
-        self._sidebar_revealer.show()
-        self._sidebar_revealer.connect(
-            'notify::child-revealed', self.__sidebar_reveal_done_cb)
-        body.pack_start(self._sidebar_revealer, False, False, 0)
+        inner.pack2(self._studio_right_panel, False, False)
+
+        body.set_position(style.zoom(455))
+        # The right divider needs the pane's real width, known only
+        # after allocation, so seat it once on the first size-allocate.
+        inner.connect('size-allocate', self.__inner_paned_size_allocate_cb)
 
         footer = Gtk.HBox(spacing=style.zoom(8))
         footer.get_style_context().add_class('create-ai-studio-footer')
@@ -1309,26 +1324,14 @@ class CreateAIActivityPanel(Gtk.EventBox):
     def _create_studio_left_panel(self):
         panel = Gtk.EventBox()
         panel.get_style_context().add_class('create-ai-studio-side')
-        panel.set_size_request(style.zoom(455), -1)
+        # Small minimum so the divider has a real range; the chat text
+        # wraps down to this width instead of being clipped.
+        panel.set_size_request(style.zoom(300), -1)
 
         box = Gtk.VBox(spacing=style.zoom(11))
         box.set_border_width(style.zoom(14))
         panel.add(box)
         box.show()
-
-        prompt_label = Gtk.Label(_('learning activity'))
-        prompt_label.get_style_context().add_class('create-ai-studio-chip')
-        prompt_label.set_halign(Gtk.Align.CENTER)
-        prompt_label.set_justify(Gtk.Justification.CENTER)
-        box.pack_start(prompt_label, False, False, 0)
-        prompt_label.show()
-        self._studio_prompt_labels.append(prompt_label)
-
-        chat_title = Gtk.Label(_('AI co-designer'))
-        chat_title.get_style_context().add_class('create-ai-chat-heading')
-        chat_title.set_xalign(0)
-        box.pack_start(chat_title, False, False, 0)
-        chat_title.show()
 
         self._chat_scroll = Gtk.ScrolledWindow()
         self._chat_scroll.set_policy(Gtk.PolicyType.NEVER,
@@ -7676,8 +7679,17 @@ if clipboard.wait_is_text_available():
         if self._sidebar_toggle_button is not None:
             self._sidebar_toggle_button.set_label(
                 _('◀ Sidebar') if self._sidebar_visible else _('▶ Sidebar'))
-        if self._sidebar_revealer is not None:
-            self._sidebar_revealer.set_reveal_child(self._sidebar_visible)
+        if self._inner_paned is None:
+            return
+        if self._sidebar_visible:
+            self._expand_pane(
+                self._inner_paned, self._studio_right_panel,
+                self._sidebar_open_position())
+        else:
+            self._sidebar_saved_pos = self._inner_paned.get_position()
+            self._collapse_pane(
+                self._inner_paned, self._studio_right_panel,
+                self._inner_paned.get_allocated_width())
 
     def __sidebar_reveal_done_cb(self, revealer, _param):
         self._refresh_preview_layout()
