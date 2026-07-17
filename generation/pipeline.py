@@ -47,11 +47,15 @@ class PipelineError(Exception):
     """Pipeline failure with optional preserved repair state."""
 
     def __init__(self, message, source='', repair_history=None,
-                 diagnostics=None):
+                 diagnostics=None, plan=None):
         Exception.__init__(self, message)
         self.source = source if isinstance(source, str) else ''
         self.repair_history = list(repair_history or ())
         self.diagnostics = diagnostics
+        # The plan of the failed candidate, preserved so a follow-up
+        # resume_repair keeps the same bundle_id, version lineage, and
+        # verification context instead of re-planning from scratch.
+        self.plan = plan if isinstance(plan, dict) else None
 
 
 _LOCAL_PROVIDER_NAMES = ('local', 'local-template')
@@ -324,6 +328,7 @@ def generate_activity(spec, output_root=None, provider=None,
                     % code_error,
                     source=failed_source,
                     repair_history=repair_history,
+                    plan=plan,
                 )
         elif template_fallback:
             # Provider only supports planning, not code generation, and the
@@ -1161,6 +1166,13 @@ def refine_activity(spec, current_source, current_plan, output_root,
     plan = dict(current_plan)
     plan['code_source'] = 'provider'
     plan['refine_method'] = refine_method
+    # A refinement always changes the source, so bump the semantic version off
+    # the parent's rather than leaving it stale or minting a timestamp.
+    parent_version = current_plan.get('activity_version')
+    if not isinstance(parent_version, int) \
+            or isinstance(parent_version, bool) or parent_version < 1:
+        parent_version = 1
+    plan['activity_version'] = parent_version + 1
     plan['parent_source_hash'] = _source_hash(current_source)
     plan['original_source_hash'] = current_plan.get(
         'original_source_hash', plan['parent_source_hash'])
@@ -1202,4 +1214,138 @@ def refine_activity(spec, current_source, current_plan, output_root,
         package_generation_result(result)
 
     progress.report('ready', 1.0, 'Refined activity is ready')
+    return result
+
+
+def resume_repair(spec, draft_source, diagnostics, output_root=None,
+                  provider=None, provider_name='default', current_plan=None,
+                  validate_code=True, progress_cb=None, pace=False,
+                  package_bundle=False, cancel_check=None):
+    """Continue repairing a preserved failed draft; never regenerate it.
+
+    A failed generation keeps its last draft and diagnostics.  This feeds them
+    straight into the transactional repair loop so the learner can retry
+    without re-planning or re-generating.  On success a real project/revision
+    is written (mirroring :func:`refine_activity`'s finalization); on failure
+    the draft and audit are preserved on the raised :class:`PipelineError` so
+    the loop can be resumed again.
+    """
+    if not isinstance(draft_source, str) or not draft_source.strip():
+        raise PipelineError('There is no saved draft to continue repairing.')
+
+    progress = _PipelineProgress(progress_cb, pace)
+    selected_provider = provider
+    if selected_provider is None and provider_name not in (
+            'local', 'local-template'):
+        try:
+            selected_provider = get_configured_provider(provider_name)
+        except ProviderError as error:
+            raise PipelineError(
+                'A configured model is required to continue repairing: %s'
+                % error,
+                source=draft_source,
+            )
+    if selected_provider is None:
+        raise PipelineError(
+            'A configured model is required to continue repairing.',
+            source=draft_source,
+        )
+
+    if output_root is None:
+        output_root = env.get_profile_path(os.path.join('aod', 'projects'))
+
+    base_plan = dict(current_plan) if isinstance(current_plan, dict) \
+        else build_plan(spec)
+
+    progress.report('generating', 0.30,
+                    'Continuing repair on the saved draft', {
+                        'draft_activity_source': draft_source,
+                        'initial_activity_source': True,
+                    })
+
+    repair = _repair_existing_source(
+        selected_provider,
+        spec,
+        base_plan,
+        draft_source,
+        diagnostics if diagnostics is not None else {
+            'stage': 'runtime_check',
+            'errors': ['The previous repair run did not finish.'],
+            'warnings': [],
+        },
+        progress,
+        validate_code=validate_code,
+        cancel_check=cancel_check,
+    )
+    repair_history = [
+        _persistable_repair_event(event, selected_provider)
+        for event in repair.history
+    ]
+    if not repair.success:
+        raise PipelineError(
+            'Repair could not finish the saved draft: %s: %s' % (
+                repair.reason,
+                _diagnostics_text(_redact_repair_value(
+                    repair.diagnostics, selected_provider)),
+            ),
+            source=repair.source,
+            repair_history=repair_history,
+            diagnostics=_redact_repair_value(
+                repair.diagnostics, selected_provider),
+            plan=base_plan,
+        )
+
+    patched_source = repair.source
+    result_diagnostics = repair.diagnostics
+
+    plan = dict(base_plan)
+    plan['code_source'] = 'provider'
+    plan['refine_method'] = 'resume_repair'
+    # The failed generation shipped no artifact, so the repaired source is the
+    # first real version of this lineage; keep the plan's version rather than
+    # bumping past a version that was never released.
+    version = plan.get('activity_version')
+    if not isinstance(version, int) or isinstance(version, bool) \
+            or version < 1:
+        plan['activity_version'] = 1
+    plan['parent_source_hash'] = _source_hash(draft_source)
+    plan['original_source_hash'] = base_plan.get(
+        'original_source_hash', plan['parent_source_hash'])
+    plan['source_hash'] = _source_hash(patched_source)
+    plan['repair_history'] = (
+        list(base_plan.get('repair_history') or []) + repair_history
+    )[-100:]
+    plan['repair_attempts'] = len([
+        event for event in repair_history if event.get('attempt', 0) > 0
+    ])
+    plan['repair_status'] = 'repaired'
+    if isinstance(result_diagnostics, dict):
+        plan['runtime_check'] = result_diagnostics.get(
+            'runtime_detail', plan.get('runtime_check', ''))
+        plan['verification_status'] = result_diagnostics.get(
+            'stage', plan.get('verification_status', ''))
+    plan['codegen_provider'] = selected_provider.name
+    plan['codegen_model'] = selected_provider.model
+
+    progress.report('generating', 0.80, 'Assembling the repaired project')
+    result = create_prototype_activity(
+        spec,
+        output_root,
+        plan=plan,
+        package_bundle=False,
+        activity_source=patched_source,
+    )
+    result.provider = selected_provider.name
+    result.model = selected_provider.model
+
+    plan_path = os.path.join(result.project_path, 'aod_plan.json')
+    with open(plan_path, 'w', encoding='utf-8') as plan_file:
+        json.dump(result.plan, plan_file, indent=2, sort_keys=True)
+        plan_file.write('\n')
+
+    if package_bundle:
+        progress.report('packaging', 0.95, 'Packaging the XO bundle')
+        package_generation_result(result)
+
+    progress.report('ready', 1.0, 'Repaired activity is ready')
     return result

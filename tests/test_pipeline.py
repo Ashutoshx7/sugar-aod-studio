@@ -945,6 +945,106 @@ class TestAodPipeline(unittest.TestCase):
         self.assertEqual('provider', result.plan['code_source'])
         self.assertEqual('passed', result.plan['runtime_check'])
 
+    def test_resume_repair_repairs_preserved_draft(self):
+        from generation.pipeline import resume_repair
+
+        current_plan = enrich_plan(
+            self.spec,
+            _FakeProvider().generate_plan('Sugar Activity API reference', ''),
+        )
+        good = _valid_activity_source(self.spec)
+        draft = good.replace(
+            'class GeneratedActivity(activity.Activity):',
+            'class GeneratedActivity(object):')
+        diagnostics = {
+            'stage': 'static_validation',
+            'errors': ['Generated source must define exactly one Activity '
+                       'subclass.'],
+            'warnings': [],
+        }
+        provider = _SequencedRefineProvider([
+            '<<<<<<< SEARCH\n'
+            'class GeneratedActivity(object):\n'
+            '=======\n'
+            'class GeneratedActivity(activity.Activity):\n'
+            '>>>>>>> REPLACE'
+        ])
+
+        result = resume_repair(
+            self.spec,
+            draft,
+            diagnostics,
+            self.output_root,
+            provider=provider,
+            current_plan=current_plan,
+            package_bundle=False,
+        )
+
+        self.assertEqual('resume_repair', result.plan['refine_method'])
+        self.assertEqual('provider', result.plan['code_source'])
+        self.assertEqual('repaired', result.plan['repair_status'])
+        self.assertIn('class GeneratedActivity(activity.Activity):',
+                      result.files['activity.py'])
+        self.assertNotIn('class GeneratedActivity(object):',
+                         result.files['activity.py'])
+
+    def test_resume_repair_without_model_preserves_draft(self):
+        from generation.pipeline import resume_repair
+
+        draft = _valid_activity_source(self.spec)
+        with self.assertRaises(PipelineError) as raised:
+            resume_repair(
+                self.spec,
+                draft,
+                None,
+                self.output_root,
+                provider=None,
+                provider_name='local',
+            )
+        self.assertIn('configured model', str(raised.exception).lower())
+        self.assertEqual(draft, raised.exception.source)
+
+    def test_resume_repair_failure_preserves_draft_and_plan(self):
+        from generation.pipeline import resume_repair
+
+        current_plan = enrich_plan(
+            self.spec,
+            _FakeProvider().generate_plan('Sugar Activity API reference', ''),
+        )
+        good = _valid_activity_source(self.spec)
+        draft = good.replace(
+            'class GeneratedActivity(activity.Activity):',
+            'class GeneratedActivity(object):')
+        diagnostics = {
+            'stage': 'static_validation',
+            'errors': ['Generated source must define exactly one Activity '
+                       'subclass.'],
+            'warnings': [],
+        }
+        # The repair patch never restores the subclass, so every attempt fails.
+        provider = _SequencedRefineProvider([
+            '<<<<<<< SEARCH\n'
+            'class GeneratedActivity(object):\n'
+            '=======\n'
+            'class GeneratedActivity(object):\n'
+            '    # still-broken\n'
+            '>>>>>>> REPLACE'
+        ] * 8)
+
+        with self.assertRaises(PipelineError) as raised:
+            resume_repair(
+                self.spec,
+                draft,
+                diagnostics,
+                self.output_root,
+                provider=provider,
+                current_plan=current_plan,
+                package_bundle=False,
+            )
+        # The draft (or its best intermediate) is preserved for another resume.
+        self.assertIn('GeneratedActivity', raised.exception.source)
+        self.assertIsInstance(raised.exception.plan, dict)
+
 
 def _valid_activity_source(spec):
     plan = enrich_plan(spec, {
