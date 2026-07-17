@@ -451,12 +451,52 @@ class CreateAIActivityPanel(Gtk.EventBox):
         except Exception:
             return None
 
+    # A smooth spectral wheel — each a medium stroke with a soft matching
+    # fill — laid out in hue order so the colours flow gently into one
+    # another as they wrap around the ring. Tasteful, not neon.
+    _HOME_RING_PALETTE = (
+        '#e0605a,#f6cbc8',   # coral red
+        '#e0803a,#f6ddc6',   # orange
+        '#e0a13a,#f6e6c6',   # amber
+        '#8faf3f,#e3edc6',   # lime
+        '#5aa65a,#cfe8cf',   # green
+        '#4db89b,#c7ece0',   # mint
+        '#3f9b8e,#bfe2db',   # teal
+        '#4a90d9,#cee0f6',   # sky
+        '#6a6ad0,#d5d5f2',   # indigo
+        '#9b6ac0,#e4d5f0',   # violet
+        '#a05a8c,#e4cddb',   # plum
+        '#d95a9b,#f6cde0',   # rose
+    )
+
+    def _home_icon_color(self):
+        # The centre XO anchors the ring in a calm muted violet.
+        try:
+            from sugar3.graphics.xocolor import XoColor
+            return XoColor('#7b74b4,#d7d1ef')
+        except Exception:
+            return self._home_xo_color()
+
+    def _home_ring_color(self, index, total):
+        # Spread the spectral wheel evenly across however many activities
+        # there are, so the ring is always a full, balanced rainbow —
+        # whether there are three icons or thirty.
+        try:
+            from sugar3.graphics.xocolor import XoColor
+            palette = self._HOME_RING_PALETTE
+            if total <= 0:
+                total = 1
+            pos = int(round(index / float(total) * len(palette))) % len(palette)
+            return XoColor(palette[pos])
+        except Exception:
+            return self._home_icon_color()
+
     def _create_home_center_icon(self):
         kwargs = {
             'icon_name': 'computer-xo',
             'pixel_size': style.XLARGE_ICON_SIZE,
         }
-        xo_color = self._home_xo_color()
+        xo_color = self._home_icon_color()
         if xo_color is not None:
             kwargs['xo_color'] = xo_color
         icon = CanvasIcon(**kwargs)
@@ -466,12 +506,12 @@ class CreateAIActivityPanel(Gtk.EventBox):
         icon.show()
         return icon
 
-    def _create_home_ring_icon(self, project):
+    def _create_home_ring_icon(self, project, index=0, total=1):
         kwargs = {
             'pixel_size': style.STANDARD_ICON_SIZE,
             'cache': True,
         }
-        xo_color = self._home_xo_color()
+        xo_color = self._home_ring_color(index, total)
         if xo_color is not None:
             kwargs['xo_color'] = xo_color
         if project['icon_path']:
@@ -532,8 +572,8 @@ class CreateAIActivityPanel(Gtk.EventBox):
         from core.projects import list_generated_projects
 
         projects = list_generated_projects()
-        icons = [self._create_home_ring_icon(project)
-                 for project in projects]
+        icons = [self._create_home_ring_icon(project, index, len(projects))
+                 for index, project in enumerate(projects)]
         self._home_ring_icons = icons
         self._home_ring.set_items(icons)
 
@@ -820,6 +860,17 @@ class CreateAIActivityPanel(Gtk.EventBox):
              'toolbar-colors'),
         ]
 
+    # A distinct (stroke, fill) colour per learning area so each card's
+    # icon carries its own vibrant hue instead of flat grey.
+    _LEARNING_AREA_COLORS = {
+        'logic_math': ('#e0603a', '#f6cbc8'),    # coral
+        'science': ('#3f9b8e', '#bfe2db'),       # teal
+        'language': ('#4a90d9', '#cee0f6'),      # sky
+        'tools_utils': ('#9b6ac0', '#e4d5f0'),   # violet
+        'games': ('#5aa65a', '#cfe8cf'),         # green
+        'creation': ('#e0a13a', '#f6e6c6'),      # amber
+    }
+
     def _build_chip_content(self, caption, value, caret=False):
         box = Gtk.VBox(spacing=0)
 
@@ -863,13 +914,25 @@ class CreateAIActivityPanel(Gtk.EventBox):
         button.add(content)
         content.show()
 
+        # These are standard theme icons that don't honour Sugar's
+        # stroke/fill recolouring, so the colour comes from a soft
+        # circular badge behind the icon instead — one hue per area.
+        badge = Gtk.EventBox()
+        badge.get_style_context().add_class('create-ai-area-badge')
+        badge.get_style_context().add_class('create-ai-area-%s' % value)
+        badge.set_halign(Gtk.Align.CENTER)
+        badge.set_valign(Gtk.Align.CENTER)
+        badge.set_size_request(style.zoom(64), style.zoom(64))
         icon = Icon(icon_name=icon_name,
                     pixel_size=style.STANDARD_ICON_SIZE,
                     stroke_color=style.COLOR_TOOLBAR_GREY.get_svg(),
                     fill_color=style.COLOR_INACTIVE_FILL.get_svg())
         icon.set_halign(Gtk.Align.CENTER)
-        content.pack_start(icon, True, True, 0)
+        icon.set_valign(Gtk.Align.CENTER)
+        badge.add(icon)
         icon.show()
+        content.pack_start(badge, True, True, 0)
+        badge.show()
 
         title_label = Gtk.Label(title)
         title_label.get_style_context().add_class('create-ai-option-title')
