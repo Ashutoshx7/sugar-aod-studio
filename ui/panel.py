@@ -266,10 +266,6 @@ class CreateAIActivityPanel(Gtk.EventBox):
         self._stack.add_named(home_view, 'home')
         home_view.show()
 
-        choose_view = self._create_choose_view()
-        self._stack.add_named(choose_view, 'choose')
-        choose_view.show()
-
         create_view = self._create_create_view()
         self._stack.add_named(create_view, 'create')
         create_view.show()
@@ -507,55 +503,6 @@ class CreateAIActivityPanel(Gtk.EventBox):
         self._use_studio_layout()
         self._refresh_home_projects()
         self._stack.set_visible_child_name('home')
-
-    def _create_choose_view(self):
-        content = Gtk.VBox(spacing=style.zoom(22))
-        content.set_size_request(style.zoom(1080), -1)
-
-        back_row = Gtk.HBox(spacing=0)
-        back_row.set_halign(Gtk.Align.START)
-        content.pack_start(back_row, False, False, 0)
-        back_row.show()
-
-        back_row.pack_start(self._create_plain_button(
-            _('Back'), self.__back_to_home_cb), False, False, 0)
-
-        title = Gtk.Label()
-        title.set_markup('<span size="xx-large" weight="bold">%s</span>' %
-                         _('How would you like to start?'))
-        title.get_style_context().add_class('create-ai-title')
-        title.set_justify(Gtk.Justification.CENTER)
-        content.pack_start(title, False, False, 0)
-        title.show()
-
-        subtitle = Gtk.Label(_('Start here if you\'re new, then try changing '
-                               'things, then create your own!'))
-        subtitle.get_style_context().add_class('create-ai-subtitle')
-        subtitle.set_justify(Gtk.Justification.CENTER)
-        subtitle.set_line_wrap(True)
-        subtitle.set_max_width_chars(72)
-        content.pack_start(subtitle, False, False, 0)
-        subtitle.show()
-
-        cards = Gtk.HBox(spacing=style.zoom(32))
-        cards.set_halign(Gtk.Align.CENTER)
-        content.pack_start(cards, False, False, style.zoom(18))
-        cards.show()
-
-        cards.pack_start(self._create_stage_card(
-            _('MODIFY'),
-            _('Change an existing activity\nPick a starter activity and\n'
-              'modify it with guided\nchallenges and hints.'),
-            _('Then try\nchanging things')), False, False, 0)
-
-        cards.pack_start(self._create_stage_card(
-            _('CREATE'),
-            _('Describe something new\nDescribe an activity in your\n'
-              'own words and the AI will\ngenerate it for you.'),
-            _('Then create\nyour own!'),
-            on_click=self.__open_create_view), False, False, 0)
-
-        return content
 
     def _create_create_view(self):
         container = Gtk.VBox(spacing=style.zoom(10))
@@ -8076,8 +8023,7 @@ if clipboard.wait_is_text_available():
         self.focus_prompt()
 
     def __home_create_new_cb(self, button):
-        self._use_centered_layout()
-        self._stack.set_visible_child_name('choose')
+        self.__open_create_view()
 
     def __back_to_home_cb(self, button):
         self._go_home()
