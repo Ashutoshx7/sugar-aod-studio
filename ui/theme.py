@@ -599,15 +599,18 @@ _CSS_TEMPLATE = '''
                 box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
             }
             .create-ai-chat-bubble-ai {
-                background-color: %(studio_cream)s;
-                border-color: %(studio_cream_border)s;
+                background-color: %(bubble_ai)s;
+                border-color: %(bubble_ai_border)s;
+            }
+            .create-ai-chat-bubble-ai label {
+                color: %(bubble_ai_text)s;
             }
             .create-ai-chat-bubble-user {
-                background-color: %(studio_lavender)s;
-                border-color: %(studio_lavender_border)s;
+                background-color: %(sky_soft)s;
+                border-color: %(sky_border)s;
             }
             .create-ai-chat-bubble-user label {
-                color: %(studio_lavender_text)s;
+                color: %(sky_text)s;
             }
             .create-ai-chat-text {
                 color: %(toolbar)s;
@@ -682,16 +685,20 @@ _CSS_TEMPLATE = '''
             }
             button.create-ai-studio-primary {
                 border-radius: 999px;
-                border: 1px solid %(studio_lavender_border)s;
+                border: 1px solid %(accent)s;
                 background-image: none;
-                background-color: %(studio_lavender)s;
-                color: %(studio_lavender_text)s;
+                background-color: %(accent)s;
+                color: %(accent_text)s;
                 padding: 5px 13px;
                 font-size: 11px;
                 font-weight: 700;
             }
+            button.create-ai-studio-primary:hover {
+                background-color: %(accent_hover)s;
+                border-color: %(accent_hover)s;
+            }
             button.create-ai-studio-primary label {
-                color: %(studio_lavender_text)s;
+                color: %(accent_text)s;
             }
             button.create-ai-studio-tab {
                 border-radius: 8px;
@@ -708,15 +715,15 @@ _CSS_TEMPLATE = '''
                 border-color: %(studio_edge)s;
             }
             button.create-ai-studio-tab-active {
-                background-color: %(studio_dark)s;
-                border-color: %(studio_dark)s;
-                color: %(studio_dark_text)s;
-                box-shadow: 0 2px 3px rgba(0, 0, 0, 0.16);
+                background-color: %(accent_violet)s;
+                border-color: %(accent_violet)s;
+                color: %(accent_text)s;
+                box-shadow: 0 2px 3px rgba(108, 86, 198, 0.28);
             }
             button.create-ai-studio-tab-active:hover {
-                background-color: %(studio_dark_hover)s;
-                border-color: %(studio_dark_hover)s;
-                color: %(studio_dark_text)s;
+                background-color: %(accent_violet_hover)s;
+                border-color: %(accent_violet_hover)s;
+                color: %(accent_text)s;
             }
             button.create-ai-studio-tab-active label {
                 color: %(studio_dark_text)s;
@@ -1157,22 +1164,40 @@ def _colors():
         'text_field': style.COLOR_TEXT_FIELD_GREY.get_html(),
         'toolbar': style.COLOR_TOOLBAR_GREY.get_html(),
         'white': style.COLOR_WHITE.get_html(),
-        'studio_canvas': '#f2f2f2',
+        # Clean, neutral surfaces so the colour lives in the elements,
+        # not the background — no single hue dominates.
+        'studio_canvas': '#f4f4f5',
         'studio_surface': '#ffffff',
-        'studio_preview': '#fcfcfc',
-        'studio_edge': '#cfcfcf',
-        'studio_edge_soft': '#e7e7e7',
-        'studio_dark': '#2f2f2f',
-        'studio_dark_hover': '#414141',
+        'studio_preview': '#fbfbfc',
+        'studio_edge': '#e3e3e6',
+        'studio_edge_soft': '#eeeef0',
+        'studio_dark': '#2c2c30',
+        'studio_dark_hover': '#414146',
         'studio_dark_text': '#ffffff',
-        'studio_lavender': '#e9e9e9',
-        'studio_lavender_soft': '#f7f7f7',
-        'studio_lavender_faint': '#d8d8d8',
-        'studio_lavender_border': '#9a9a9a',
-        'studio_lavender_text': '#202020',
-        'studio_cream': '#fff4d8',
-        'studio_cream_border': '#ddbd73',
-        'studio_cream_text': '#322717',
+        'studio_lavender': '#f0f0f2',
+        'studio_lavender_soft': '#f7f7f8',
+        'studio_lavender_faint': '#e4e4e7',
+        'studio_lavender_border': '#cacace',
+        'studio_lavender_text': '#2a2a2e',
+        'studio_cream': '#fdf5e2',
+        'studio_cream_border': '#e6d29c',
+        'studio_cream_text': '#3a3020',
+        # A spread of distinct accents — each element type gets its own
+        # colour, so the UI reads genuinely colourful, not mono-violet.
+        'accent': '#e8663f',          # coral — primary buttons
+        'accent_hover': '#f0794f',
+        'accent_text': '#ffffff',
+        'accent_violet': '#6c56c6',   # violet — active tabs
+        'accent_violet_hover': '#7c68d6',
+        'teal_soft': '#d9f0ea',       # teal — chips
+        'teal_border': '#7fc4b7',
+        'teal_text': '#154b43',
+        'sky_soft': '#e3eefb',        # blue — the learner's chat bubbles
+        'sky_border': '#a6c7ec',
+        'sky_text': '#1e3a57',
+        'bubble_ai': '#e9f4ee',       # soft mint — the AI's chat bubbles
+        'bubble_ai_border': '#c4ded0',
+        'bubble_ai_text': '#243f31',
     }
 
 
