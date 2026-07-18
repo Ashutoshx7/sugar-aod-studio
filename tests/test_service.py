@@ -8,7 +8,6 @@ import json
 import shutil
 import tempfile
 import threading
-import time
 import unittest
 import zipfile
 
@@ -135,13 +134,23 @@ class TestAodService(unittest.TestCase):
             'Out-of-order callback',
         )
         self.assertEqual(0.5, job.progress)
+        # A committed repair candidate always arrives with its repair
+        # event (see the pipeline's verify_candidate); bare draft ticks
+        # are streaming updates and are intentionally not persisted on
+        # every callback.
         self.service._set_progress(
             job,
             STATUS_GENERATING,
             'generating',
             0.6,
             'Repair improved',
-            {'draft_activity_source': 'improved source\n'},
+            {
+                'draft_activity_source': 'improved source\n',
+                'repair_event': {
+                    'attempt': 2,
+                    'outcome': 'improved_committed',
+                },
+            },
         )
 
         persisted = self.store.load(job.job_id)
@@ -514,13 +523,28 @@ class TestAodService(unittest.TestCase):
         self.assertEqual(STATUS_CANCELLED, finished.status)
 
     def _wait_for_terminal(self, job_id):
-        deadline = time.time() + 10
-        while time.time() < deadline:
+        # Event-driven wait via the service's own watch() hook: returns
+        # the instant the job finishes, so suite load can't push a
+        # healthy job past a polling budget.  The generous deadline is a
+        # true hang detector, not a performance bet.
+        import threading
+
+        done = threading.Event()
+
+        def on_update(updated):
+            if updated.is_terminal():
+                done.set()
+
+        self.service.watch(job_id, on_update)
+        try:
             job = self.service.get_job(job_id)
             if job is not None and job.is_terminal():
                 return job
-            time.sleep(0.05)
-        self.fail('Timed out waiting for AOD job to finish.')
+            if not done.wait(timeout=60):
+                self.fail('Timed out waiting for AOD job to finish.')
+        finally:
+            self.service.unwatch(job_id, on_update)
+        return self.service.get_job(job_id)
 
 
 class _Observer:

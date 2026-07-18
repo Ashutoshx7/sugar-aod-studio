@@ -5,6 +5,7 @@
 from dataclasses import dataclass
 from dataclasses import field
 import json
+import logging
 import os
 import threading
 import time
@@ -246,6 +247,16 @@ class AODJobStore:
                 return None
             with open(path, encoding='utf-8') as source:
                 return AODJob.from_dict(json.load(source))
+
+    def delete(self, job_id):
+        with self._lock:
+            try:
+                os.remove(self._job_path(job_id))
+            except FileNotFoundError:
+                pass
+            except OSError:
+                logging.debug(
+                    'Could not delete job record %s', job_id, exc_info=True)
 
     def list_jobs(self):
         with self._lock:

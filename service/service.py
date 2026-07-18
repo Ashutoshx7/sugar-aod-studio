@@ -7,6 +7,7 @@ import hashlib
 import logging
 import os
 import threading
+import time
 
 from llm.credentials import AODCredentialStore
 from llm.credentials import CredentialStoreError
@@ -57,6 +58,7 @@ class AODService:
         self._jobs = {}
         self._provider_overrides = {}
         self._job_providers = {}
+        self._last_progress_save = 0.0
         self._load_jobs()
         self._queue = AODJobQueue(self._run_job, worker_count=worker_count)
 
@@ -123,6 +125,9 @@ class AODService:
             session_id=source_job.session_id,
             user_prompt=source_job.user_prompt or source_job.spec.prompt,
             enhance=False,
+            # Keep the revision lineage: the repaired result is still a
+            # child of the revision the failed refinement was editing.
+            parent_revision_id=source_job.parent_revision_id,
         )
         job.is_resume = True
         job.draft_activity_source = source_job.draft_activity_source
@@ -145,6 +150,18 @@ class AODService:
                 self._job_providers[job.job_id] = provider
             self._store.save(job)
 
+        if job.session_id:
+            # Leave a transcript record, mirroring submit_activity's status
+            # half; without it the session jumps from the failure straight
+            # to a finished result with no trace of the continuation.
+            self._session_store.append_messages(job.session_id, [
+                AODMessage.create(
+                    ROLE_ASSISTANT,
+                    'Continuing repair of the failed draft...',
+                    message_type=TYPE_STATUS,
+                    job_id=job.job_id,
+                ),
+            ])
         self._notify(job)
         self._queue.submit(job)
         return job
@@ -299,8 +316,35 @@ class AODService:
     def shutdown(self, wait=True):
         self._queue.shutdown(wait=wait)
 
+    # Terminal jobs kept on disk (and loaded at startup); each record
+    # embeds full draft/original sources, so an unbounded store grows
+    # startup cost, memory, and flash wear forever.
+    _JOB_RETENTION_LIMIT = 50
+
     def _load_jobs(self):
-        for job in self._store.list_jobs():
+        jobs = self._store.list_jobs()
+
+        # list_jobs is newest-first; prune terminal records beyond the
+        # cap, but never a failed job whose draft is still resumable via
+        # 'Continue repairing'.
+        terminal_seen = 0
+        pruned = []
+        for job in jobs:
+            if not job.is_terminal():
+                continue
+            terminal_seen += 1
+            if terminal_seen <= self._JOB_RETENTION_LIMIT:
+                continue
+            if job.status == STATUS_FAILED and job.draft_activity_source:
+                continue
+            pruned.append(job)
+        for job in pruned:
+            self._store.delete(job.job_id)
+        pruned_ids = {job.job_id for job in pruned}
+
+        for job in jobs:
+            if job.job_id in pruned_ids:
+                continue
             if not job.is_terminal():
                 job.fail('Sugar restarted before this job finished.')
                 self._store.save(job)
@@ -317,13 +361,17 @@ class AODService:
                     )
                     job.result = None
                 if job.result is None:
+                    # Demote in memory only: a transient miss (e.g. the
+                    # output volume not mounted yet at startup) must not
+                    # permanently destroy a finished record on disk.  The
+                    # next startup retries the restore and self-heals when
+                    # the artifacts are back.
                     job.status = STATUS_FAILED
                     job.stage = STATUS_FAILED
                     job.error = (
                         'Generated activity artifacts are no longer available.'
                     )
                     job.message = job.error
-                    self._store.save(job)
             self._jobs[job.job_id] = job
 
     def _ensure_session(self, spec, session_id=''):
@@ -592,6 +640,9 @@ class AODService:
     def _set_progress(self, job, status, stage, progress, message,
                       metadata=None):
         with self._lock:
+            previous_status = job.status
+            previous_stage = job.stage
+            significant = False
             job.update_progress(status, stage, progress, message)
             if isinstance(metadata, dict):
                 draft_source = metadata.get('draft_activity_source')
@@ -600,9 +651,11 @@ class AODService:
                     if metadata.get('initial_activity_source') and \
                             not job.original_activity_source:
                         job.original_activity_source = draft_source
+                        significant = True
                 enhanced = metadata.get('enhanced_prompt')
                 if isinstance(enhanced, str) and enhanced:
                     job.enhanced_prompt = enhanced
+                    significant = True
                 repair_event = metadata.get('repair_event')
                 if isinstance(repair_event, dict):
                     # Keep diagnostics bounded: repair histories are useful
@@ -610,10 +663,27 @@ class AODService:
                     # a long-running repair session.
                     job.repair_history.append(dict(repair_event))
                     job.repair_history = job.repair_history[-100:]
+                    significant = True
                 repair_diagnostics = metadata.get('repair_diagnostics')
                 if isinstance(repair_diagnostics, dict):
                     job.repair_diagnostics = dict(repair_diagnostics)
-            self._store.save(job)
+                    significant = True
+            # Persist on state changes, repair/draft milestones, or about
+            # once a second.  Streaming reports every ~80ms (plus paced
+            # duplicates) with the full partial source in metadata, and
+            # serializing the whole job to disk on each tick is O(n^2)
+            # bytes written per generation, real flash wear, and lock
+            # contention for every UI poll.  All terminal paths (finish,
+            # _mark_failed, _mark_cancelled) still save unconditionally,
+            # so at most ~1s of a partial stream is at risk on a hard
+            # crash.
+            now = time.monotonic()
+            if (significant
+                    or status != previous_status
+                    or stage != previous_stage
+                    or now - self._last_progress_save >= 1.0):
+                self._store.save(job)
+                self._last_progress_save = now
         self._notify(job)
 
     def _mark_failed(self, job, error):
