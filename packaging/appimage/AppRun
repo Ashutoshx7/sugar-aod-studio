@@ -19,8 +19,12 @@ APP_DIR="$HERE/usr/share/sugar-activity-studio"
 # Native libraries: the GTK stack plus libsugarext.
 export LD_LIBRARY_PATH="$ARCH_LIB:$HERE/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
-# GObject-introspection typelibs (Gtk, Gdk, Rsvg, SugarExt, ...).
-export GI_TYPELIB_PATH="$ARCH_LIB/girepository-1.0${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}"
+# GObject-introspection typelibs.  The GTK plugin drops the core stack
+# (Gtk, Gdk, GLib, Gio, GdkPixbuf, Pango, Atk, ...) in usr/lib/girepository-1.0,
+# while our overlay puts the Sugar bits (Rsvg, SugarExt, ...) in the arch dir.
+# BOTH must be on the path or GI silently falls through to the host's typelibs
+# and the studio fails to load Gtk on a machine that has no GTK installed.
+export GI_TYPELIB_PATH="$HERE/usr/lib/girepository-1.0:$ARCH_LIB/girepository-1.0${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}"
 
 # Fully self-contained Python: ignore the host's site-packages entirely.
 export PYTHONHOME="$HERE/usr"
@@ -33,6 +37,21 @@ export GDK_PIXBUF_MODULE_FILE="$ARCH_LIB/gdk-pixbuf-2.0/2.10.0/loaders.cache"
 
 # GSettings schemas (sugar3.graphics.style reads org.sugarlabs.font).
 export GSETTINGS_SCHEMA_DIR="$HERE/usr/share/glib-2.0/schemas"
+
+# TLS CA certificates for HTTPS provider calls (llm/providers.py uses
+# urllib over TLS).  Prefer the host's up-to-date trust store; fall back to
+# the snapshot we bundle only when the host ships none at OpenSSL's paths.
+if [ -z "${SSL_CERT_FILE:-}" ]; then
+    for _ca in /etc/ssl/certs/ca-certificates.crt \
+               /etc/pki/tls/certs/ca-bundle.crt \
+               /etc/ssl/cert.pem \
+               /usr/lib/ssl/cert.pem; do
+        [ -f "$_ca" ] && { export SSL_CERT_FILE="$_ca"; break; }
+    done
+    if [ -z "${SSL_CERT_FILE:-}" ] && [ -f "$HERE/usr/share/ssl/cert.pem" ]; then
+        export SSL_CERT_FILE="$HERE/usr/share/ssl/cert.pem"
+    fi
+fi
 
 # Find bundled icons/themes/schemas before anything on the host.
 export XDG_DATA_DIRS="$HERE/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"

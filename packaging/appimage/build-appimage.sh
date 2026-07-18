@@ -137,6 +137,19 @@ cp /usr/share/glib-2.0/schemas/*.xml \
    "$APPDIR/usr/share/glib-2.0/schemas/" 2>/dev/null || true
 glib-compile-schemas "$APPDIR/usr/share/glib-2.0/schemas/"
 
+# --- 8b. A CA bundle snapshot (fallback for hosts with no system certs) -----
+# HTTPS provider calls (llm/providers.py, urllib over TLS) need a trust store.
+# AppRun prefers the host's certs and only uses this snapshot when the host
+# ships none at OpenSSL's default paths.
+log "Bundling a CA certificate snapshot"
+mkdir -p "$APPDIR/usr/share/ssl"
+for _ca in /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt \
+           /etc/ssl/cert.pem; do
+    [ -f "$_ca" ] && { cp "$_ca" "$APPDIR/usr/share/ssl/cert.pem"; break; }
+done
+[ -f "$APPDIR/usr/share/ssl/cert.pem" ] || \
+    echo "  (no host CA bundle found to snapshot; AppRun will rely on host certs)"
+
 # --- 9. Regenerate a relocatable gdk-pixbuf loaders.cache ------------------
 # Include the SVG loader just added, and make loader paths basenames so they
 # resolve via GDK_PIXBUF_MODULEDIR (set by AppRun) at runtime, not the build
