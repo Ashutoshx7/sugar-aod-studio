@@ -303,6 +303,8 @@ def validate_activity_source_for_request(source, spec, plan=None):
             'Generated activity still contains placeholder text.'
         )
 
+    _check_ui_quality(report, source, source_lower, spec)
+
     request_words = _tokens(request)
     overlap = request_words.intersection(_tokens(source))
     if request_words and len(overlap) < min(2, len(request_words)):
@@ -311,6 +313,60 @@ def validate_activity_source_for_request(source, spec, plan=None):
         )
 
     return report
+
+
+def _check_ui_quality(report, source, source_lower, spec):
+    """Reject only *clearly* unstyled activity UIs.
+
+    High precision on purpose: the error fires only when the UI is plain on
+    every axis at once -- no Sugar style, no CSS/style-context work, no
+    tooltips, and no Pango markup -- and only for a substantial, interactive
+    activity.  Any single styling touch clears the gate, so drawing-heavy or
+    intentionally minimal activities are never trapped.  When it does fire,
+    the error rides the normal repair loop, which makes the model add the
+    missing Sugar-native styling.
+    """
+    if getattr(spec, 'code_size', 'standard') == 'compact':
+        return
+    if len(source) < 1500:
+        return
+    interactive = ('gtk.button', 'gtk.togglebutton', 'gtk.entry',
+                   'gtk.combobox', 'gtk.scale', 'toolbutton(')
+    if sum(source_lower.count(widget) for widget in interactive) < 2:
+        return
+
+    uses_sugar_style = (
+        'sugar3.graphics.style' in source_lower
+        or 'graphics import style' in source_lower
+        or '.zoom(' in source_lower
+        or 'icon_size' in source_lower
+        or 'style.color_' in source_lower)
+    uses_css = (
+        'cssprovider' in source_lower
+        or 'get_style_context' in source_lower
+        or 'add_provider_for_screen' in source_lower)
+    uses_tooltips = (
+        'tooltip_text' in source_lower
+        or 'set_tooltip_markup' in source_lower)
+    uses_pango_markup = (
+        'set_markup' in source_lower
+        or 'pango' in source_lower
+        or '<b>' in source_lower
+        or '<span' in source_lower)
+
+    if uses_sugar_style or uses_css or uses_tooltips or uses_pango_markup:
+        return
+
+    report.errors.append(
+        'The activity UI is not Sugar-native: it uses none of '
+        'sugar3.graphics.style, Gtk.CssProvider/get_style_context styling, '
+        'widget tooltips, or Pango markup. Make it look like a real Sugar '
+        'activity: import sugar3.graphics.style and use style.zoom(N) for '
+        'spacing/margins and style.COLOR_* for colors; add tooltip_text to '
+        'every button and entry; use Pango markup (<b>...</b>) for section '
+        'titles via Gtk.Label.set_markup; and apply a Gtk.CssProvider with '
+        'get_style_context().add_class(...) for panels. Keep all existing '
+        'behavior and the GeneratedActivity class.')
 
 
 def validate_project(project_path):

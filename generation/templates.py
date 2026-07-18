@@ -30,6 +30,7 @@ def _render_shell(spec, plan, body):
         from sugar3.activity import activity
         from sugar3.activity.widgets import ActivityToolbarButton
         from sugar3.activity.widgets import StopButton
+        from sugar3.graphics import style
         from sugar3.graphics.toolbarbox import ToolbarBox
 
 
@@ -41,6 +42,7 @@ def _render_shell(spec, plan, body):
             def __init__(self, handle):
                 activity.Activity.__init__(self, handle)
                 self.max_participants = 1
+                self._install_styles()
                 self._build_toolbar()
                 self._build_canvas()
 
@@ -48,9 +50,67 @@ def _render_shell(spec, plan, body):
                 toolbar_box = ToolbarBox()
                 toolbar = toolbar_box.toolbar
                 toolbar.insert(ActivityToolbarButton(self), 0)
+                separator = Gtk.SeparatorToolItem()
+                separator.props.draw = False
+                separator.set_expand(True)
+                toolbar.insert(separator, -1)
                 toolbar.insert(StopButton(self), -1)
                 self.set_toolbar_box(toolbar_box)
                 toolbar_box.show_all()
+
+            def _install_styles(self):
+                # One Sugar-consistent stylesheet for every generated
+                # activity: bold titles, muted goal/status text, padded
+                # panels -- all sized with style.zoom so it tracks the
+                # learner's display.
+                try:
+                    screen = Gdk.Screen.get_default()
+                    if screen is None:
+                        return
+                    css = (
+                        '.aod-title {{ font-weight: bold;'
+                        ' font-size: %dpx; }}'
+                        '.aod-goal {{ color: %s; }}'
+                        '.aod-status {{ color: %s; }}'
+                        '.aod-panel {{ padding: %dpx; }}'
+                    ) % (
+                        style.zoom(15),
+                        style.COLOR_BUTTON_GREY.get_html(),
+                        style.COLOR_SELECTION_GREY.get_html(),
+                        style.zoom(10),
+                    )
+                    provider = Gtk.CssProvider()
+                    provider.load_from_data(css.encode('utf-8'))
+                    Gtk.StyleContext.add_provider_for_screen(
+                        screen, provider,
+                        Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+                except Exception:
+                    pass
+
+            def _make_title(self, text):
+                label = Gtk.Label()
+                label.set_markup(
+                    '<b>%s</b>' % GLib.markup_escape_text(str(text)))
+                label.set_xalign(0)
+                label.get_style_context().add_class('aod-title')
+                return label
+
+            def _standard_canvas(self):
+                # A titled, evenly spaced panel shared by every template so
+                # the activity reads as a real Sugar activity, not a bare
+                # GTK window.
+                canvas = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
+                                 spacing=style.zoom(10))
+                canvas.set_border_width(style.zoom(18))
+                canvas.get_style_context().add_class('aod-panel')
+                canvas.pack_start(
+                    self._make_title(ACTIVITY_TITLE), False, False, 0)
+                goal = Gtk.Label(label=LEARNER_GOAL)
+                goal.set_line_wrap(True)
+                goal.set_xalign(0)
+                goal.get_style_context().add_class('aod-goal')
+                canvas.pack_start(goal, False, False, 0)
+                return canvas
 
         {body}
         '''
@@ -67,24 +127,21 @@ def _render_canvas(spec, plan):
         '''\
         def _build_canvas(self):
             self._points = []
-            canvas = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-            canvas.set_border_width(24)
-
-            goal = Gtk.Label(label=LEARNER_GOAL)
-            goal.set_line_wrap(True)
-            canvas.pack_start(goal, False, False, 0)
+            canvas = self._standard_canvas()
 
             self._drawing = Gtk.DrawingArea()
-            self._drawing.set_size_request(640, 420)
+            self._drawing.set_size_request(style.zoom(360), style.zoom(240))
             self._drawing.add_events(
                 Gdk.EventMask.BUTTON_PRESS_MASK |
                 Gdk.EventMask.BUTTON_MOTION_MASK)
             self._drawing.connect('button-press-event', self._draw_point)
             self._drawing.connect('motion-notify-event', self._draw_point)
             self._drawing.connect('draw', self._draw_canvas)
+            self._drawing.set_tooltip_text('Click and drag to draw')
             canvas.pack_start(self._drawing, True, True, 0)
 
             clear_button = Gtk.Button(label='Clear drawing')
+            clear_button.set_tooltip_text('Erase everything on the canvas')
             clear_button.connect('clicked', self._clear_drawing)
             canvas.pack_start(clear_button, False, False, 0)
 
@@ -131,23 +188,22 @@ def _render_grid(spec, plan):
         '''\
         def _build_canvas(self):
             self._grid_state = [False] * 16
-            canvas = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-            canvas.set_border_width(24)
+            canvas = self._standard_canvas()
 
-            goal = Gtk.Label(label=LEARNER_GOAL)
-            goal.set_line_wrap(True)
-            canvas.pack_start(goal, False, False, 0)
-
-            grid = Gtk.Grid(row_spacing=8, column_spacing=8)
+            grid = Gtk.Grid(row_spacing=style.zoom(8),
+                            column_spacing=style.zoom(8))
+            grid.set_halign(Gtk.Align.CENTER)
             self._grid_buttons = []
             for index in range(16):
                 button = Gtk.ToggleButton(label=str(index + 1))
+                button.set_tooltip_text('Toggle square %d' % (index + 1))
                 button.connect('toggled', self._grid_toggled, index)
                 grid.attach(button, index % 4, index // 4, 1, 1)
                 self._grid_buttons.append(button)
             canvas.pack_start(grid, True, False, 0)
 
             self._grid_status = Gtk.Label(label='Find or create a pattern.')
+            self._grid_status.get_style_context().add_class('aod-status')
             canvas.pack_start(self._grid_status, False, False, 0)
 
             self.set_canvas(canvas)
@@ -189,19 +245,15 @@ def _render_chess(spec, plan):
             self._buttons = []
             self._board = self._starting_board()
 
-            canvas = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-            canvas.set_border_width(16)
-
-            goal = Gtk.Label(label=LEARNER_GOAL)
-            goal.set_line_wrap(True)
-            canvas.pack_start(goal, False, False, 0)
+            canvas = self._standard_canvas()
 
             self._status = Gtk.Label()
             self._status.set_line_wrap(True)
+            self._status.get_style_context().add_class('aod-status')
             canvas.pack_start(self._status, False, False, 0)
 
             play_area = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
-                                spacing=18)
+                                spacing=style.zoom(18))
             canvas.pack_start(play_area, True, True, 0)
 
             board_frame = Gtk.Alignment(xalign=0.5, yalign=0.5,
@@ -234,7 +286,7 @@ def _render_chess(spec, plan):
                 button_row = []
                 for col in range(8):
                     button = Gtk.Button()
-                    button.set_size_request(64, 58)
+                    button.set_size_request(style.zoom(56), style.zoom(52))
                     button.connect('clicked', self._square_clicked, row, col)
                     self._grid.attach(button, col, row, 1, 1)
                     button_row.append(button)
@@ -242,8 +294,8 @@ def _render_chess(spec, plan):
             play_area.pack_start(board_frame, True, True, 0)
 
             side_panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
-                                 spacing=10)
-            side_panel.set_size_request(320, -1)
+                                 spacing=style.zoom(10))
+            side_panel.set_size_request(style.zoom(300), -1)
             play_area.pack_start(side_panel, False, False, 0)
 
             prompt = Gtk.Label(
@@ -272,7 +324,7 @@ def _render_chess(spec, plan):
 
             if self._show_move_log:
                 scroll = Gtk.ScrolledWindow()
-                scroll.set_size_request(320, 210)
+                scroll.set_size_request(style.zoom(300), style.zoom(200))
                 self._move_log_view = Gtk.TextView()
                 self._move_log_view.set_editable(False)
                 self._move_log_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
@@ -286,8 +338,9 @@ def _render_chess(spec, plan):
                 side_panel.pack_start(clean_note, False, False, 0)
 
             controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
-                               spacing=8)
+                               spacing=style.zoom(8))
             reset_button = Gtk.Button(label='Reset board')
+            reset_button.set_tooltip_text('Start a fresh game')
             reset_button.connect('clicked', self._reset_board)
             controls.pack_start(reset_button, False, False, 0)
             controls.pack_start(
@@ -602,28 +655,25 @@ def _render_carrom(spec, plan):
             self._shot_log = []
             self._aim_point = [0.5, 0.82]
 
-            canvas = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-            canvas.set_border_width(18)
-
-            goal = Gtk.Label(label=LEARNER_GOAL)
-            goal.set_line_wrap(True)
-            goal.set_xalign(0)
-            canvas.pack_start(goal, False, False, 0)
+            canvas = self._standard_canvas()
 
             play_area = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
-                                spacing=18)
+                                spacing=style.zoom(18))
             canvas.pack_start(play_area, True, True, 0)
 
             self._board = Gtk.DrawingArea()
-            self._board.set_size_request(560, 560)
+            self._board.set_size_request(style.zoom(420), style.zoom(420))
             self._board.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
             self._board.connect('draw', self._draw_carrom_board)
             self._board.connect('button-press-event',
                                 self._board_clicked)
+            self._board.set_tooltip_text(
+                'Click to place the striker aim marker')
             play_area.pack_start(self._board, True, True, 0)
 
-            side = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-            side.set_size_request(330, -1)
+            side = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
+                           spacing=style.zoom(8))
+            side.set_size_request(style.zoom(300), -1)
             play_area.pack_start(side, False, False, 0)
 
             self._turn_label = Gtk.Label()
@@ -646,32 +696,38 @@ def _render_carrom(spec, plan):
                 'Shot idea, rebound plan, or partner note')
             side.pack_start(self._shot_note, False, False, 0)
 
-            controls = Gtk.Grid(row_spacing=6, column_spacing=6)
+            controls = Gtk.Grid(row_spacing=style.zoom(6),
+                                column_spacing=style.zoom(6))
             side.pack_start(controls, False, False, 0)
 
             buttons = (
-                ('Pocket white', self._record_pocket, 'white'),
-                ('Pocket black', self._record_pocket, 'black'),
-                ('Pocket queen', self._record_pocket, 'queen'),
-                ('Foul', self._record_foul, None),
-                ('Switch turn', self._switch_turn, None),
-                ('Reset match', self._reset_match, None),
+                ('Pocket white', self._record_pocket, 'white',
+                 'Record a pocketed white coin'),
+                ('Pocket black', self._record_pocket, 'black',
+                 'Record a pocketed black coin'),
+                ('Pocket queen', self._record_pocket, 'queen',
+                 'Record a pocketed queen'),
+                ('Foul', self._record_foul, None, 'Record a foul'),
+                ('Switch turn', self._switch_turn, None,
+                 'Pass play to the other player'),
+                ('Reset match', self._reset_match, None,
+                 'Start the match over'),
             )
             for index, item in enumerate(buttons):
-                label, callback, value = item
+                label, callback, value, tip = item
                 button = Gtk.Button(label=label)
+                button.set_tooltip_text(tip)
                 if value is None:
                     button.connect('clicked', callback)
                 else:
                     button.connect('clicked', callback, value)
                 controls.attach(button, index % 2, index // 2, 1, 1)
 
-            log_label = Gtk.Label(label='Shot log')
-            log_label.set_xalign(0)
+            log_label = self._make_title('Shot log')
             side.pack_start(log_label, False, False, 0)
 
             scroll = Gtk.ScrolledWindow()
-            scroll.set_size_request(300, 180)
+            scroll.set_size_request(style.zoom(280), style.zoom(170))
             self._log_view = Gtk.TextView()
             self._log_view.set_editable(False)
             self._log_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
@@ -968,16 +1024,13 @@ def _render_narrative(spec, plan):
     return dedent(
         '''\
         def _build_canvas(self):
-            canvas = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-            canvas.set_border_width(24)
-
-            goal = Gtk.Label(label=LEARNER_GOAL)
-            goal.set_line_wrap(True)
-            canvas.pack_start(goal, False, False, 0)
+            canvas = self._standard_canvas()
 
             scroll = Gtk.ScrolledWindow()
             self._editor = Gtk.TextView()
             self._editor.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+            self._editor.set_tooltip_text(
+                'Write your story here; it saves to the Journal')
             self._editor.get_buffer().set_text({starter})
             scroll.add(self._editor)
             canvas.pack_start(scroll, True, True, 0)
@@ -1026,22 +1079,24 @@ def _render_quiz(spec, plan):
             self._question_index = 0
             self._score = 0
 
-            canvas = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
-            canvas.set_border_width(24)
+            canvas = self._standard_canvas()
 
             self._question_label = Gtk.Label()
             self._question_label.set_line_wrap(True)
             canvas.pack_start(self._question_label, True, True, 0)
 
             self._answer_entry = Gtk.Entry()
+            self._answer_entry.set_tooltip_text('Type your answer here')
             self._answer_entry.connect('activate', self._check_answer)
             canvas.pack_start(self._answer_entry, False, False, 0)
 
             check_button = Gtk.Button(label='Check answer')
+            check_button.set_tooltip_text('Check your answer and keep score')
             check_button.connect('clicked', self._check_answer)
             canvas.pack_start(check_button, False, False, 0)
 
-            self._feedback = Gtk.Label(label=LEARNER_GOAL)
+            self._feedback = Gtk.Label(label='Answer, then check your work.')
+            self._feedback.get_style_context().add_class('aod-status')
             canvas.pack_start(self._feedback, False, False, 0)
             self._show_question()
 
@@ -1105,15 +1160,12 @@ def _render_word_counter_utility():
     return dedent(
         '''\
         def _build_canvas(self):
-            canvas = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-            canvas.set_border_width(24)
-
-            goal = Gtk.Label(label=LEARNER_GOAL)
-            goal.set_line_wrap(True)
-            canvas.pack_start(goal, False, False, 0)
+            canvas = self._standard_canvas()
 
             self._utility_input = Gtk.TextView()
             self._utility_input.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+            self._utility_input.set_tooltip_text(
+                'Type or paste text to count words and characters')
             self._utility_input.get_buffer().connect(
                 'changed', self._update_count)
             scroll = Gtk.ScrolledWindow()
@@ -1121,6 +1173,7 @@ def _render_word_counter_utility():
             canvas.pack_start(scroll, True, True, 0)
 
             self._utility_result = Gtk.Label(label='0 words, 0 characters')
+            self._utility_result.get_style_context().add_class('aod-status')
             canvas.pack_start(self._utility_result, False, False, 0)
 
             self.set_canvas(canvas)
@@ -1158,36 +1211,35 @@ def _render_counter_utility():
         '''\
         def _build_canvas(self):
             self._count = 0
-            canvas = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
-            canvas.set_border_width(24)
-
-            goal = Gtk.Label(label=LEARNER_GOAL)
-            goal.set_line_wrap(True)
-            canvas.pack_start(goal, False, False, 0)
+            canvas = self._standard_canvas()
 
             self._counter_label = Gtk.Label(label='0')
             canvas.pack_start(self._counter_label, True, True, 0)
 
             controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
-                               spacing=10)
+                               spacing=style.zoom(10))
             controls.set_halign(Gtk.Align.CENTER)
             canvas.pack_start(controls, False, False, 0)
 
             minus_button = Gtk.Button(label='-1')
+            minus_button.set_tooltip_text('Subtract one from the count')
             minus_button.connect('clicked', self._change_count, -1)
             controls.pack_start(minus_button, False, False, 0)
 
             plus_button = Gtk.Button(label='+1')
+            plus_button.set_tooltip_text('Add one to the count')
             plus_button.connect('clicked', self._change_count, 1)
             controls.pack_start(plus_button, False, False, 0)
 
             reset_button = Gtk.Button(label='Reset')
+            reset_button.set_tooltip_text('Reset the count to zero')
             reset_button.connect('clicked', self._reset_count)
             controls.pack_start(reset_button, False, False, 0)
 
             self._counter_note = Gtk.Label(
                 label='Use the count, then explain what it means.')
             self._counter_note.set_line_wrap(True)
+            self._counter_note.get_style_context().add_class('aod-status')
             canvas.pack_start(self._counter_note, False, False, 0)
 
             self.set_canvas(canvas)
@@ -1229,32 +1281,30 @@ def _render_timer_utility():
             self._timer_running = False
             self._timer_id = 0
 
-            canvas = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
-            canvas.set_border_width(24)
-
-            goal = Gtk.Label(label=LEARNER_GOAL)
-            goal.set_line_wrap(True)
-            canvas.pack_start(goal, False, False, 0)
+            canvas = self._standard_canvas()
 
             self._timer_label = Gtk.Label(label='00:00')
             canvas.pack_start(self._timer_label, True, True, 0)
 
             controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
-                               spacing=10)
+                               spacing=style.zoom(10))
             controls.set_halign(Gtk.Align.CENTER)
             canvas.pack_start(controls, False, False, 0)
 
             self._timer_toggle = Gtk.Button(label='Start')
+            self._timer_toggle.set_tooltip_text('Start or pause the timer')
             self._timer_toggle.connect('clicked', self._toggle_timer)
             controls.pack_start(self._timer_toggle, False, False, 0)
 
             reset_button = Gtk.Button(label='Reset')
+            reset_button.set_tooltip_text('Reset the timer to zero')
             reset_button.connect('clicked', self._reset_timer)
             controls.pack_start(reset_button, False, False, 0)
 
             self._timer_note = Gtk.Label(
                 label='Use elapsed time as evidence for your reflection.')
             self._timer_note.set_line_wrap(True)
+            self._timer_note.get_style_context().add_class('aod-status')
             canvas.pack_start(self._timer_note, False, False, 0)
 
             self.set_canvas(canvas)

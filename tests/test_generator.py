@@ -10,10 +10,13 @@ import tempfile
 import unittest
 
 from generation.generator import create_prototype_activity
+from generation.generator import enrich_plan
 from generation.generator import infer_template
+from generation.templates import render_activity_source
 from core.spec import ActivitySpec
 from generation.validator import validate_bundle
 from generation.validator import validate_project
+from generation.validator import validate_source
 
 
 class TestAodGenerator(unittest.TestCase):
@@ -70,6 +73,30 @@ class TestAodGenerator(unittest.TestCase):
                 "gi.require_version('Gtk', '3.0')",
                 result.files['activity.py'],
             )
+
+    def test_templates_are_sugar_native(self):
+        # Render-only (no bundle packaging) so this stays a fast, pure
+        # check of the generated source.
+        for template in (
+                'canvas', 'carrom', 'chess', 'grid', 'narrative', 'quiz',
+                'utility'):
+            spec = ActivitySpec(
+                name='%s Demo' % template.title(),
+                prompt='Create a %s learning activity.' % template,
+                category='creation',
+                license_id='MIT',
+                template=template,
+            )
+            plan = enrich_plan(spec, {'template': template})
+            source = render_activity_source(spec, plan)
+            self.assertIn('from sugar3.graphics import style', source,
+                          template)
+            self.assertIn('style.zoom(', source, template)
+            self.assertIn('set_tooltip_text', source, template)
+            self.assertTrue(
+                'set_markup' in source or 'CssProvider' in source,
+                '%s: expected Pango markup or a CssProvider' % template)
+            self.assertTrue(validate_source(source).valid, template)
 
     def test_chess_prompt_generates_playable_board_template(self):
         spec = ActivitySpec(
