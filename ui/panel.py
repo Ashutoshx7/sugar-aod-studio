@@ -204,6 +204,10 @@ class CreateAIActivityPanel(Gtk.EventBox):
         self._live_edit_target_label = None
         self._live_edit_target = _('activity canvas')
         self._live_edit_target_is_region = False
+        # 'widget' (a named control), 'region' (a dragged rectangle), or
+        # 'point' (a precise spot inside a canvas). Drives how the target is
+        # described to the refinement backend.
+        self._live_edit_target_kind = 'widget'
         self._live_edit_on_button = None
         self._live_edit_off_button = None
         self._live_edit_enabled = True
@@ -215,6 +219,9 @@ class CreateAIActivityPanel(Gtk.EventBox):
         self._preview_shell = None
         self._select_start = None
         self._select_rect = None
+        # A single clicked spot inside the preview (shell coords), drawn as a
+        # crosshair so the learner sees exactly what a click targeted.
+        self._select_point = None
         self._ask_bar = None
         self._ask_bar_entry = None
         self._ask_bar_target_label = None
@@ -1812,6 +1819,7 @@ class CreateAIActivityPanel(Gtk.EventBox):
         self._preview_shell = None
         self._select_start = None
         self._select_rect = None
+        self._select_point = None
         if self._live_preview_activity is not None:
             try:
                 self._live_preview_activity.cleanup()
@@ -3906,12 +3914,15 @@ class CreateAIActivityPanel(Gtk.EventBox):
         for label in self._studio_prompt_labels:
             label.set_text(prompt)
 
-    def _set_live_edit_target(self, target, is_region=False):
+    def _set_live_edit_target(self, target, is_region=False, kind=None):
         target = target.strip() if isinstance(target, str) else ''
         if not target:
             target = _('activity canvas')
+        if kind is None:
+            kind = 'region' if is_region else 'widget'
         self._live_edit_target = target
-        self._live_edit_target_is_region = is_region
+        self._live_edit_target_is_region = (kind == 'region')
+        self._live_edit_target_kind = kind
         if self._live_edit_target_label is not None:
             self._live_edit_target_label.set_text(
                 _('Preview target: %s') % target)
@@ -4067,6 +4078,7 @@ class CreateAIActivityPanel(Gtk.EventBox):
             return False
         self._select_start = (event.x, event.y)
         self._select_rect = None
+        self._select_point = None
         shell.queue_draw()
         return True
 
@@ -4087,8 +4099,27 @@ class CreateAIActivityPanel(Gtk.EventBox):
         if rect is None or (rect[2] < 8 and rect[3] < 8):
             # A plain click: target the widget under the pointer.
             self._select_rect = None
-            target = self._pick_live_edit_target_at(shell, event.x, event.y)
-            self._set_live_edit_target(target or _('activity canvas'))
+            desc, widget, origin, size = self._pick_live_edit_target_at(
+                shell, event.x, event.y)
+            if widget is None or self._is_canvas_target(widget):
+                # A drawing surface (or empty canvas background): pin the exact
+                # spot so a refinement can act on whatever is drawn there
+                # instead of the whole canvas.
+                if widget is None:
+                    alloc = shell.get_allocation()
+                    origin = (0, 0)
+                    size = (alloc.width, alloc.height)
+                    desc = desc or _('activity canvas')
+                self._select_point = (event.x, event.y)
+                self._highlight_live_edit_widget(None)
+                self._set_live_edit_target(
+                    self._describe_canvas_point(
+                        desc, event.x, event.y, origin, size),
+                    kind='point')
+            else:
+                self._select_point = None
+                self._highlight_live_edit_widget(widget)
+                self._set_live_edit_target(desc or _('activity canvas'))
         else:
             # A drag: target the marked region, described in percentages
             # of the preview so refinements know where to look.
@@ -4109,23 +4140,55 @@ class CreateAIActivityPanel(Gtk.EventBox):
         return True
 
     def __preview_shell_draw_after_cb(self, shell, cr):
-        rect = self._select_rect
-        if rect is None or not self._live_edit_enabled:
+        if not self._live_edit_enabled:
             return False
-        x, y, w, h = rect
-        cr.set_source_rgba(1.0, 0.78, 0.0, 0.14)
-        cr.rectangle(x, y, w, h)
-        cr.fill()
-        cr.set_source_rgba(1.0, 0.78, 0.0, 0.9)
-        cr.set_line_width(2)
-        cr.rectangle(x, y, w, h)
-        cr.stroke()
+        rect = self._select_rect
+        if rect is not None:
+            x, y, w, h = rect
+            cr.set_source_rgba(1.0, 0.78, 0.0, 0.14)
+            cr.rectangle(x, y, w, h)
+            cr.fill()
+            cr.set_source_rgba(1.0, 0.78, 0.0, 0.9)
+            cr.set_line_width(2)
+            cr.rectangle(x, y, w, h)
+            cr.stroke()
+            return False
+        point = self._select_point
+        if point is not None:
+            px, py = point
+            radius = style.zoom(9)
+            reach = radius + style.zoom(5)
+            # Soft halo so the marker reads over any activity background.
+            cr.set_source_rgba(1.0, 0.78, 0.0, 0.22)
+            cr.arc(px, py, reach, 0, 2 * math.pi)
+            cr.fill()
+            cr.set_source_rgba(0.95, 0.55, 0.0, 0.95)
+            cr.set_line_width(2.0)
+            cr.arc(px, py, radius, 0, 2 * math.pi)
+            cr.stroke()
+            # Crosshair through the centre.
+            cr.move_to(px - reach, py)
+            cr.line_to(px + reach, py)
+            cr.move_to(px, py - reach)
+            cr.line_to(px, py + reach)
+            cr.stroke()
         return False
 
     def _pick_live_edit_target_at(self, shell, x, y):
+        """Return ``(desc, widget, origin, size)`` for the smallest mapped
+        target under ``(x, y)``.
+
+        ``origin`` is the widget's top-left in shell coordinates and ``size``
+        is its ``(width, height)``, so the caller can work out where inside
+        the widget the click landed.  Everything is ``None`` when no
+        registered target sits under the pointer.  Highlighting is left to the
+        caller so a canvas click can show a point marker instead.
+        """
         best_desc = None
         best_widget = None
         best_area = None
+        best_origin = None
+        best_size = None
         for widget, desc in self._live_edit_targets:
             try:
                 if not widget.get_mapped():
@@ -4145,9 +4208,69 @@ class CreateAIActivityPanel(Gtk.EventBox):
                 best_desc = desc
                 best_widget = widget
                 best_area = area
-        if best_widget is not None:
-            self._highlight_live_edit_widget(best_widget)
-        return best_desc
+                best_origin = (wx, wy)
+                best_size = (alloc.width, alloc.height)
+        return best_desc, best_widget, best_origin, best_size
+
+    def _is_canvas_target(self, widget):
+        """A large free-form drawing surface a single click can't sub-target."""
+        return isinstance(widget, (Gtk.DrawingArea, Gtk.Layout))
+
+    def _live_edit_zone(self, rx, ry, width, height):
+        """Map a point inside a surface to a named zone plus percentages.
+
+        Splits the surface into a 3x3 grid (top-left ... bottom-right) so the
+        target names roughly where the learner clicked, and returns the exact
+        position as percentages from the top-left corner.
+        """
+        width = max(width, 1)
+        height = max(height, 1)
+        px = min(100, max(0, int(round(rx * 100.0 / width))))
+        py = min(100, max(0, int(round(ry * 100.0 / height))))
+        col = 0 if px < 34 else (1 if px < 67 else 2)
+        row = 0 if py < 34 else (1 if py < 67 else 2)
+        names = {
+            (0, 0): _('top-left'), (1, 0): _('top'), (2, 0): _('top-right'),
+            (0, 1): _('left'), (1, 1): _('centre'), (2, 1): _('right'),
+            (0, 2): _('bottom-left'), (1, 2): _('bottom'),
+            (2, 2): _('bottom-right'),
+        }
+        return names[(col, row)], px, py
+
+    def _describe_canvas_point(self, base, x, y, origin, size):
+        """Describe a click inside a canvas as 'base - zone (x%, y%)'."""
+        ox, oy = origin if origin else (0, 0)
+        width, height = size if size else (1, 1)
+        zone, px, py = self._live_edit_zone(x - ox, y - oy, width, height)
+        base = (base or _('activity canvas')).strip()
+        return _('%(base)s — %(zone)s (%(px)d%%, %(py)d%%)') % {
+            'base': base, 'zone': zone, 'px': px, 'py': py,
+        }
+
+    def _preview_target_note(self):
+        """The instruction the backend gets for the current preview target."""
+        kind = self._live_edit_target_kind
+        if kind == 'region':
+            return (
+                'The learner dragged a selection over the live preview. The '
+                'target below is that rectangle, in percent of the activity '
+                'canvas measured from its top-left corner '
+                '(x, y • width × height). Work out which widgets or drawing '
+                'fall inside that region and apply the change to them.'
+            )
+        if kind == 'point':
+            return (
+                'The learner clicked one precise spot inside the activity '
+                'canvas. The target below names the rough region and gives '
+                'the exact click position as percentages from the canvas '
+                'top-left corner (x%, y%). Find whatever is drawn, '
+                'positioned, or hit-tested at that spot and apply the change '
+                'there, leaving the rest of the canvas unchanged.'
+            )
+        return (
+            'The learner clicked this specific part of the live preview. '
+            'Apply the change to it.'
+        )
 
     def __clear_live_edit_press_flag(self):
         self._live_edit_press_handled = False
@@ -7225,20 +7348,7 @@ if clipboard.wait_is_text_available():
         backend_refinement = refinement
         display_refinement = refinement
         if source == 'preview':
-            if self._live_edit_target_is_region:
-                target_note = (
-                    'The learner dragged a selection over the live '
-                    'preview. The target below is that rectangle, in '
-                    'percent of the activity canvas measured from its '
-                    'top-left corner (x, y • width × height). '
-                    'Work out which widgets or drawing fall inside that '
-                    'region and apply the change to them.'
-                )
-            else:
-                target_note = (
-                    'The learner clicked this specific part of the live '
-                    'preview. Apply the change to it.'
-                )
+            target_note = self._preview_target_note()
             backend_refinement = (
                 '%(note)s Keep the rest of the activity working '
                 'unchanged.\n'

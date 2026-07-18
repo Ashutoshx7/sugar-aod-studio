@@ -191,6 +191,65 @@ print('OFFSCREEN-HOME-OK')
 '''
 
 
+_OFFSCREEN_TARGET_SCRIPT = '''
+import gi
+gi.require_version('Gtk', '3.0')
+from gi.repository import Gtk
+
+from ui.panel import CreateAIActivityPanel
+
+window = Gtk.OffscreenWindow()
+panel = CreateAIActivityPanel()
+window.add(panel)
+window.show_all()
+panel.reset_view()
+while Gtk.events_pending():
+    Gtk.main_iteration_do(False)
+
+# A click inside a canvas maps to a named 3x3 zone plus exact percentages.
+assert panel._live_edit_zone(0, 0, 200, 100)[0] == 'top-left'
+assert panel._live_edit_zone(100, 50, 200, 100)[0] == 'centre'
+assert panel._live_edit_zone(200, 100, 200, 100)[0] == 'bottom-right'
+zone, px, py = panel._live_edit_zone(150, 25, 200, 100)
+assert zone == 'top-right', zone
+assert (px, py) == (75, 25), (px, py)
+
+# The description carries the zone and clamped percentages...
+desc = panel._describe_canvas_point(
+    'drawing canvas', 180, 20, (0, 0), (200, 100))
+assert 'drawing canvas' in desc and 'top-right' in desc, desc
+assert '90%' in desc and '20%' in desc, desc
+# ...and the widget origin is subtracted before measuring.
+desc2 = panel._describe_canvas_point(
+    'drawing canvas', 60, 60, (40, 40), (40, 40))
+assert '50%, 50%' in desc2, desc2
+
+# Target kind drives the note the refinement backend receives.
+panel._set_live_edit_target('drawing canvas - centre (50%, 50%)', kind='point')
+assert panel._live_edit_target_kind == 'point'
+assert not panel._live_edit_target_is_region
+assert 'precise spot' in panel._preview_target_note()
+
+panel._set_live_edit_target('area 10%, 10%', is_region=True)
+assert panel._live_edit_target_kind == 'region'
+assert 'dragged a selection' in panel._preview_target_note()
+
+panel._set_live_edit_target('button: Clear')
+assert panel._live_edit_target_kind == 'widget'
+assert 'clicked this specific part' in panel._preview_target_note()
+
+# Picking a target now returns (desc, widget, origin, size); nothing under
+# the pointer yields a clean 4-tuple of Nones rather than crashing.
+result = panel._pick_live_edit_target_at(window, -100, -100)
+assert isinstance(result, tuple) and len(result) == 4, result
+assert result[1] is None
+
+panel.destroy()
+window.destroy()
+print('OFFSCREEN-TARGET-OK')
+'''
+
+
 @unittest.skipUnless(
     _gtk_display_available(), 'needs a usable display server')
 class TestStudioOffscreen(unittest.TestCase):
@@ -228,6 +287,14 @@ class TestStudioOffscreen(unittest.TestCase):
             'offscreen smoke failed:\n%s%s'
             % (completed.stdout, completed.stderr))
         self.assertIn('OFFSCREEN-OK', completed.stdout)
+
+    def test_live_edit_targets_a_precise_canvas_point(self):
+        completed = self._run_offscreen(_OFFSCREEN_TARGET_SCRIPT)
+        self.assertEqual(
+            0, completed.returncode,
+            'offscreen target test failed:\n%s%s'
+            % (completed.stdout, completed.stderr))
+        self.assertIn('OFFSCREEN-TARGET-OK', completed.stdout)
 
 
 if __name__ == '__main__':
