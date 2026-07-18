@@ -159,8 +159,21 @@ def run_runtime_check(source, name='Generated Activity', timeout=None):
         shutil.rmtree(project_dir, ignore_errors=True)
 
 
+_probe_ok_cache = set()
+
+
 def _probe_runtime_infrastructure(env, timeout):
-    """Return a host-runtime problem description, or None when usable."""
+    """Return a host-runtime problem description, or None when usable.
+
+    A successful probe only re-learns a stable host property (display +
+    GTK + sugar3 available), so it is cached per environment for the
+    life of the process; failures are always re-probed so a display
+    that comes up mid-session is noticed.  Without the cache every
+    repair-loop iteration paid a full GTK+Sugar subprocess cold start.
+    """
+    cache_key = tuple(sorted(env.items()))
+    if cache_key in _probe_ok_cache:
+        return None
     try:
         completed = subprocess.run(
             [sys.executable, '-c', _INFRASTRUCTURE_PROBE],
@@ -176,6 +189,7 @@ def _probe_runtime_infrastructure(env, timeout):
 
     if completed.returncode == 0 \
             and 'INFRASTRUCTURE-OK' in completed.stdout:
+        _probe_ok_cache.add(cache_key)
         return None
     return _process_detail(completed)
 

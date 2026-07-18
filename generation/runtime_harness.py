@@ -45,6 +45,7 @@ class _StartupProblems(logging.Handler):
 def main(project_dir):
     import gi
     gi.require_version('Gtk', '3.0')
+    from gi.repository import GLib
     from gi.repository import Gtk
 
     from preview.runner import render_activity_preview
@@ -68,6 +69,35 @@ def main(project_dir):
         while Gtk.events_pending():
             Gtk.main_iteration_do(False)
 
+    # A non-blocking pump never lets GLib.timeout_add sources become
+    # ready, yet the codegen contract drives game loops with exactly
+    # those timers -- and PyGObject swallows exceptions raised inside
+    # dispatched callbacks (they go through sys.excepthook and the
+    # process carries on).  Spin the real main loop for a bounded window
+    # with a recording excepthook so a frame callback that crashes on
+    # its first ticks fails the gate instead of shipping.
+    spin_seconds = _env_float('AOD_RUNTIME_SPIN_SECONDS', 1.5)
+    if spin_seconds > 0:
+        callback_failures = []
+        previous_hook = sys.excepthook
+
+        def _record_failure(exc_type, exc_value, exc_tb):
+            callback_failures.append(''.join(
+                traceback.format_exception(exc_type, exc_value, exc_tb)))
+
+        sys.excepthook = _record_failure
+        try:
+            loop = GLib.MainLoop()
+            GLib.timeout_add(int(spin_seconds * 1000), loop.quit)
+            loop.run()
+        finally:
+            sys.excepthook = previous_hook
+        if callback_failures:
+            sys.stderr.write(
+                'Activity crashed inside an event callback:\n%s\n'
+                % '\n'.join(callback_failures))
+            return 1
+
     # The generated class overrides read_file/write_file; run them for
     # real so broken Journal persistence fails the gate.
     handle, journal_path = tempfile.mkstemp(prefix='aod-runtime-journal-')
@@ -90,9 +120,19 @@ def main(project_dir):
     return 0
 
 
+def _env_float(name, default):
+    try:
+        return float(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
 if __name__ == '__main__':
     try:
-        sys.exit(main(sys.argv[1]))
-    except Exception:
+        _exit_code = main(sys.argv[1])
+    except BaseException:
+        # BaseException: a generated sys.exit()/SystemExit must produce a
+        # traceback for the repair loop, not a silent exit code.
         traceback.print_exc()
         sys.exit(1)
+    sys.exit(_exit_code)

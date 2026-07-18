@@ -35,6 +35,13 @@ def _template_source():
 
 class TestRuntimeCheck(unittest.TestCase):
 
+    def setUp(self):
+        # The infrastructure probe caches success per environment; tests
+        # that mock subprocess.run count its calls, so start each test
+        # with a cold cache.
+        from generation import runtime_check
+        runtime_check._probe_ok_cache.clear()
+
     def _skip_if_runtime_unavailable(self, ok, detail):
         if ok and detail.startswith(
                 'skipped: runtime infrastructure unavailable'):
