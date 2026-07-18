@@ -20,6 +20,8 @@ def _render_shell(spec, plan, body):
 
         import json
 
+        from gettext import gettext as _
+
         import gi
         gi.require_version('Gdk', '3.0')
         gi.require_version('Gtk', '3.0')
@@ -143,11 +145,11 @@ def _render_canvas(spec, plan):
             self._drawing.connect('button-press-event', self._draw_point)
             self._drawing.connect('motion-notify-event', self._draw_point)
             self._drawing.connect('draw', self._draw_canvas)
-            self._drawing.set_tooltip_text('Click and drag to draw')
+            self._drawing.set_tooltip_text(_('Click and drag to draw'))
             canvas.pack_start(self._drawing, True, True, 0)
 
-            clear_button = Gtk.Button(label='Clear drawing')
-            clear_button.set_tooltip_text('Erase everything on the canvas')
+            clear_button = Gtk.Button(label=_('Clear drawing'))
+            clear_button.set_tooltip_text(_('Erase everything on the canvas'))
             clear_button.connect('clicked', self._clear_drawing)
             canvas.pack_start(clear_button, False, False, 0)
 
@@ -210,13 +212,13 @@ def _render_grid(spec, plan):
             self._grid_buttons = []
             for index in range(16):
                 button = Gtk.ToggleButton(label=str(index + 1))
-                button.set_tooltip_text('Toggle square %d' % (index + 1))
+                button.set_tooltip_text(_('Toggle square %d') % (index + 1))
                 button.connect('toggled', self._grid_toggled, index)
                 grid.attach(button, index % 4, index // 4, 1, 1)
                 self._grid_buttons.append(button)
             canvas.pack_start(grid, True, False, 0)
 
-            self._grid_status = Gtk.Label(label='Find or create a pattern.')
+            self._grid_status = Gtk.Label(label=_('Find or create a pattern.'))
             self._grid_status.get_style_context().add_class('aod-status')
             canvas.pack_start(self._grid_status, False, False, 0)
 
@@ -227,7 +229,7 @@ def _render_grid(spec, plan):
             self._grid_state[index] = button.get_active()
             selected = sum(1 for value in self._grid_state if value)
             self._grid_status.set_text(
-                '%d squares are part of your pattern.' % selected)
+                _('%d squares are part of your pattern.') % selected)
 
         def write_file(self, file_path):
             with open(file_path, 'w', encoding='utf-8') as output:
@@ -316,8 +318,8 @@ def _render_chess(spec, plan):
             play_area.pack_start(side_panel, False, False, 0)
 
             prompt = Gtk.Label(
-                label='Before each move, say your idea out loud or type it '
-                      'below.')
+                label=_('Before each move, say your idea out loud or type it '
+                        'below.'))
             prompt.set_line_wrap(True)
             side_panel.pack_start(prompt, False, False, 0)
 
@@ -328,7 +330,7 @@ def _render_chess(spec, plan):
 
             self._move_idea = Gtk.Entry()
             self._move_idea.set_placeholder_text(
-                'Move idea, plan, or teamwork note')
+                _('Move idea, plan, or teamwork note'))
             side_panel.pack_start(self._move_idea, False, False, 0)
 
             self._captured_white = Gtk.Label()
@@ -349,19 +351,19 @@ def _render_chess(spec, plan):
                 side_panel.pack_start(scroll, True, True, 0)
             else:
                 clean_note = Gtk.Label(
-                    label='Clean board mode: move history is hidden.')
+                    label=_('Clean board mode: move history is hidden.'))
                 clean_note.set_xalign(0)
                 clean_note.set_line_wrap(True)
                 side_panel.pack_start(clean_note, False, False, 0)
 
             controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
                                spacing=style.zoom(8))
-            reset_button = Gtk.Button(label='Reset board')
-            reset_button.set_tooltip_text('Start a fresh game')
+            reset_button = Gtk.Button(label=_('Reset board'))
+            reset_button.set_tooltip_text(_('Start a fresh game'))
             reset_button.connect('clicked', self._reset_board)
             controls.pack_start(reset_button, False, False, 0)
             controls.pack_start(
-                Gtk.Label(label='Click a piece, then its destination.'),
+                Gtk.Label(label=_('Click a piece, then its destination.')),
                 False, False, 0)
             side_panel.pack_start(controls, False, False, 0)
 
@@ -394,14 +396,14 @@ def _render_chess(spec, plan):
             piece = self._board[row][col]
             if self._selected_square is None:
                 if not piece:
-                    self._set_status('Choose a %s piece to move.' %
+                    self._set_status(_('Choose a %s piece to move.') %
                                      self._turn_name())
                     return
                 if piece[0] != self._turn:
-                    self._set_status('It is %s turn.' % self._turn_name())
+                    self._set_status(_('It is %s turn.') % self._turn_name())
                     return
                 self._selected_square = (row, col)
-                self._set_status('Selected %s at %s.' %
+                self._set_status(_('Selected %s at %s.') %
                                  (self._piece_name(piece),
                                   self._square_name(row, col)))
                 self._refresh_board()
@@ -411,18 +413,18 @@ def _render_chess(spec, plan):
             moving = self._board[start_row][start_col]
             if (row, col) == self._selected_square:
                 self._selected_square = None
-                self._set_status('Selection cleared.')
+                self._set_status(_('Selection cleared.'))
                 self._refresh_board()
                 return
             if piece and piece[0] == self._turn:
                 self._selected_square = (row, col)
-                self._set_status('Selected %s at %s.' %
+                self._set_status(_('Selected %s at %s.') %
                                  (self._piece_name(piece),
                                   self._square_name(row, col)))
                 self._refresh_board()
                 return
             if not self._can_move(moving, start_row, start_col, row, col):
-                self._set_status('%s cannot move to %s.' %
+                self._set_status(_('%s cannot move to %s.') %
                                  (self._piece_name(moving),
                                   self._square_name(row, col)))
                 return
@@ -446,7 +448,7 @@ def _render_chess(spec, plan):
                 self._move_log.append(move_text)
             self._turn = 'b' if self._turn == 'w' else 'w'
             self._selected_square = None
-            self._set_status('%s. %s to move.' %
+            self._set_status(_('%s. %s to move.') %
                              (move_text, self._turn_name()))
             self._refresh_board()
 
@@ -533,7 +535,7 @@ def _render_chess(spec, plan):
             # move feedback whenever the log was empty (always, in
             # clean-board mode).
             if self._status_is_default:
-                self._set_status('%s to move. Select a piece.' %
+                self._set_status(_('%s to move. Select a piece.') %
                                  self._turn_name())
                 self._status_is_default = True
             self._update_captured()
@@ -555,8 +557,8 @@ def _render_chess(spec, plan):
                              self._captured.get('w', [])) or 'none'
             black = ' '.join(labels.get(piece, '') for piece in
                              self._captured.get('b', [])) or 'none'
-            self._captured_white.set_text('White captured: %s' % white)
-            self._captured_black.set_text('Black captured: %s' % black)
+            self._captured_white.set_text(_('White captured: %s') % white)
+            self._captured_black.set_text(_('Black captured: %s') % black)
 
         def _update_lesson_steps(self):
             text = '\\n'.join(
@@ -564,7 +566,7 @@ def _render_chess(spec, plan):
                 for index, step in enumerate(self._lesson_steps, 1)
             )
             self._lesson_steps_label.set_text(
-                text or 'Take turns, explain moves, then save to Journal.')
+                text or _('Take turns, explain moves, then save to Journal.'))
 
         def _update_move_log(self):
             if self._move_log_view is None:
@@ -574,7 +576,7 @@ def _render_chess(spec, plan):
                 for index, move in enumerate(self._move_log, 1)
             )
             self._move_log_view.get_buffer().set_text(
-                text or 'Move log will appear here.')
+                text or _('Move log will appear here.'))
 
         def _set_status(self, text):
             self._status.set_text(text)
@@ -606,7 +608,7 @@ def _render_chess(spec, plan):
             self._turn = 'w'
             self._move_log = []
             self._captured = {'w': [], 'b': []}
-            self._set_status('Board reset. White to move.')
+            self._set_status(_('Board reset. White to move.'))
             self._refresh_board()
 
         def write_file(self, file_path):
@@ -706,7 +708,7 @@ def _render_carrom(spec, plan):
             self._board.connect('button-press-event',
                                 self._board_clicked)
             self._board.set_tooltip_text(
-                'Click to place the striker aim marker')
+                _('Click to place the striker aim marker'))
             play_area.pack_start(self._board, True, True, 0)
 
             side = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
@@ -731,7 +733,7 @@ def _render_carrom(spec, plan):
 
             self._shot_note = Gtk.Entry()
             self._shot_note.set_placeholder_text(
-                'Shot idea, rebound plan, or partner note')
+                _('Shot idea, rebound plan, or partner note'))
             side.pack_start(self._shot_note, False, False, 0)
 
             controls = Gtk.Grid(row_spacing=style.zoom(6),
@@ -739,17 +741,17 @@ def _render_carrom(spec, plan):
             side.pack_start(controls, False, False, 0)
 
             buttons = (
-                ('Pocket white', self._record_pocket, 'white',
-                 'Record a pocketed white coin'),
-                ('Pocket black', self._record_pocket, 'black',
-                 'Record a pocketed black coin'),
-                ('Pocket queen', self._record_pocket, 'queen',
-                 'Record a pocketed queen'),
-                ('Foul', self._record_foul, None, 'Record a foul'),
-                ('Switch turn', self._switch_turn, None,
-                 'Pass play to the other player'),
-                ('Reset match', self._reset_match, None,
-                 'Start the match over'),
+                (_('Pocket white'), self._record_pocket, 'white',
+                 _('Record a pocketed white coin')),
+                (_('Pocket black'), self._record_pocket, 'black',
+                 _('Record a pocketed black coin')),
+                (_('Pocket queen'), self._record_pocket, 'queen',
+                 _('Record a pocketed queen')),
+                (_('Foul'), self._record_foul, None, _('Record a foul')),
+                (_('Switch turn'), self._switch_turn, None,
+                 _('Pass play to the other player')),
+                (_('Reset match'), self._reset_match, None,
+                 _('Start the match over')),
             )
             for index, item in enumerate(buttons):
                 label, callback, value, tip = item
@@ -761,7 +763,7 @@ def _render_carrom(spec, plan):
                     button.connect('clicked', callback, value)
                 controls.attach(button, index % 2, index // 2, 1, 1)
 
-            log_label = self._make_title('Shot log')
+            log_label = self._make_title(_('Shot log'))
             side.pack_start(log_label, False, False, 0)
 
             scroll = Gtk.ScrolledWindow()
@@ -773,9 +775,9 @@ def _render_carrom(spec, plan):
             side.pack_start(scroll, True, True, 0)
 
             help_text = Gtk.Label(
-                label='Click the board to place the striker aim marker, '
-                      'record the shot result, then switch turns. The match '
-                      'state is saved in the Journal.')
+                label=_('Click the board to place the striker aim marker, '
+                        'record the shot result, then switch turns. The '
+                        'match state is saved in the Journal.'))
             help_text.set_xalign(0)
             help_text.set_line_wrap(True)
             side.pack_start(help_text, False, False, 0)
@@ -802,7 +804,7 @@ def _render_carrom(spec, plan):
                 (event.y - top) / size,
             ]
             self._set_carrom_status(
-                '%s set an aim point. Add a note, then record the result.' %
+                _('%s set an aim point. Add a note, then record the result.') %
                 self._player_name())
             self._board.queue_draw()
             self._update_carrom_panel()
@@ -963,7 +965,7 @@ def _render_carrom(spec, plan):
             status = getattr(
                 self,
                 '_carrom_status',
-                'Student A to shoot. Click the board to set an aim point.')
+                _('Student A to shoot. Click the board to set an aim point.'))
             if hasattr(self, '_turn_label'):
                 self._turn_label.set_text('%s\\n%s' %
                                           (self._player_name(), status))
@@ -1034,7 +1036,7 @@ def _render_carrom(spec, plan):
             else:
                 self._aim_point = [0.5, 0.82]
             if hasattr(self, '_turn_label'):
-                self._set_carrom_status('%s restored from the Journal.' %
+                self._set_carrom_status(_('%s restored from the Journal.') %
                                         self._player_name())
                 self._update_carrom_panel()
 
@@ -1125,16 +1127,18 @@ def _render_quiz(spec, plan):
             canvas.pack_start(self._question_label, True, True, 0)
 
             self._answer_entry = Gtk.Entry()
-            self._answer_entry.set_tooltip_text('Type your answer here')
+            self._answer_entry.set_tooltip_text(_('Type your answer here'))
             self._answer_entry.connect('activate', self._check_answer)
             canvas.pack_start(self._answer_entry, False, False, 0)
 
-            check_button = Gtk.Button(label='Check answer')
-            check_button.set_tooltip_text('Check your answer and keep score')
+            check_button = Gtk.Button(label=_('Check answer'))
+            check_button.set_tooltip_text(
+                _('Check your answer and keep score'))
             check_button.connect('clicked', self._check_answer)
             canvas.pack_start(check_button, False, False, 0)
 
-            self._feedback = Gtk.Label(label='Answer, then check your work.')
+            self._feedback = Gtk.Label(
+                label=_('Answer, then check your work.'))
             self._feedback.get_style_context().add_class('aod-status')
             canvas.pack_start(self._feedback, False, False, 0)
             self._show_question()
@@ -1154,9 +1158,9 @@ def _render_quiz(spec, plan):
             answer = self._answer_entry.get_text().strip().lower()
             if expected == 'anything' or answer == expected:
                 self._score += 1
-                message = 'Good thinking!'
+                message = _('Good thinking!')
             else:
-                message = 'Try comparing your answer with: %s' % expected
+                message = _('Try comparing your answer with: %s') % expected
             self._question_index = (
                 self._question_index + 1) % len(self._questions)
             self._feedback.set_text(
@@ -1217,7 +1221,7 @@ def _render_word_counter_utility():
             scroll.add(self._utility_input)
             canvas.pack_start(scroll, True, True, 0)
 
-            self._utility_result = Gtk.Label(label='0 words, 0 characters')
+            self._utility_result = Gtk.Label(label=_('0 words, 0 characters'))
             self._utility_result.get_style_context().add_class('aod-status')
             canvas.pack_start(self._utility_result, False, False, 0)
 
@@ -1233,7 +1237,7 @@ def _render_word_counter_utility():
             text = self._get_utility_text()
             words = len(text.split())
             self._utility_result.set_text(
-                '%d words, %d characters' % (words, len(text)))
+                _('%d words, %d characters') % (words, len(text)))
 
         def write_file(self, file_path):
             with open(file_path, 'w', encoding='utf-8') as output:
@@ -1267,22 +1271,22 @@ def _render_counter_utility():
             canvas.pack_start(controls, False, False, 0)
 
             minus_button = Gtk.Button(label='-1')
-            minus_button.set_tooltip_text('Subtract one from the count')
+            minus_button.set_tooltip_text(_('Subtract one from the count'))
             minus_button.connect('clicked', self._change_count, -1)
             controls.pack_start(minus_button, False, False, 0)
 
             plus_button = Gtk.Button(label='+1')
-            plus_button.set_tooltip_text('Add one to the count')
+            plus_button.set_tooltip_text(_('Add one to the count'))
             plus_button.connect('clicked', self._change_count, 1)
             controls.pack_start(plus_button, False, False, 0)
 
-            reset_button = Gtk.Button(label='Reset')
-            reset_button.set_tooltip_text('Reset the count to zero')
+            reset_button = Gtk.Button(label=_('Reset'))
+            reset_button.set_tooltip_text(_('Reset the count to zero'))
             reset_button.connect('clicked', self._reset_count)
             controls.pack_start(reset_button, False, False, 0)
 
             self._counter_note = Gtk.Label(
-                label='Use the count, then explain what it means.')
+                label=_('Use the count, then explain what it means.'))
             self._counter_note.set_line_wrap(True)
             self._counter_note.get_style_context().add_class('aod-status')
             canvas.pack_start(self._counter_note, False, False, 0)
@@ -1339,18 +1343,18 @@ def _render_timer_utility():
             controls.set_halign(Gtk.Align.CENTER)
             canvas.pack_start(controls, False, False, 0)
 
-            self._timer_toggle = Gtk.Button(label='Start')
-            self._timer_toggle.set_tooltip_text('Start or pause the timer')
+            self._timer_toggle = Gtk.Button(label=_('Start'))
+            self._timer_toggle.set_tooltip_text(_('Start or pause the timer'))
             self._timer_toggle.connect('clicked', self._toggle_timer)
             controls.pack_start(self._timer_toggle, False, False, 0)
 
-            reset_button = Gtk.Button(label='Reset')
-            reset_button.set_tooltip_text('Reset the timer to zero')
+            reset_button = Gtk.Button(label=_('Reset'))
+            reset_button.set_tooltip_text(_('Reset the timer to zero'))
             reset_button.connect('clicked', self._reset_timer)
             controls.pack_start(reset_button, False, False, 0)
 
             self._timer_note = Gtk.Label(
-                label='Use elapsed time as evidence for your reflection.')
+                label=_('Use elapsed time as evidence for your reflection.'))
             self._timer_note.set_line_wrap(True)
             self._timer_note.get_style_context().add_class('aod-status')
             canvas.pack_start(self._timer_note, False, False, 0)
