@@ -372,6 +372,14 @@ def generate_activity(spec, output_root=None, provider=None,
 
     progress.report('assembling', 0.78,
                     'Assembling the activity project')
+    # activity.py was written with the auto-style bootstrap appended, so the
+    # lineage hash recorded in the plan must match the shipped file -- and
+    # this write runs whether or not a bundle is packaged (the studio
+    # previews without packaging), so correct the hash here, not only in
+    # package_generation_result.
+    shipped_source = result.files.get('activity.py')
+    if shipped_source:
+        result.plan['source_hash'] = _source_hash(shipped_source)
     plan_path = os.path.join(result.project_path, 'aod_plan.json')
     with open(plan_path, 'w', encoding='utf-8') as plan_file:
         json.dump(result.plan, plan_file, indent=2, sort_keys=True)
@@ -1211,6 +1219,9 @@ def refine_activity(spec, current_source, current_plan, output_root,
     result.provider = selected_provider.name
     result.model = selected_provider.model
 
+    shipped_source = result.files.get('activity.py')
+    if shipped_source:
+        result.plan['source_hash'] = _source_hash(shipped_source)
     plan_path = os.path.join(result.project_path, 'aod_plan.json')
     with open(plan_path, 'w', encoding='utf-8') as plan_file:
         json.dump(result.plan, plan_file, indent=2, sort_keys=True)
@@ -1345,6 +1356,9 @@ def resume_repair(spec, draft_source, diagnostics, output_root=None,
     result.provider = selected_provider.name
     result.model = selected_provider.model
 
+    shipped_source = result.files.get('activity.py')
+    if shipped_source:
+        result.plan['source_hash'] = _source_hash(shipped_source)
     plan_path = os.path.join(result.project_path, 'aod_plan.json')
     with open(plan_path, 'w', encoding='utf-8') as plan_file:
         json.dump(result.plan, plan_file, indent=2, sort_keys=True)

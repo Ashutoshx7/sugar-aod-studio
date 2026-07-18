@@ -216,6 +216,30 @@ class TestAodGenerator(unittest.TestCase):
             hashlib.sha256(disk_source.encode('utf-8')).hexdigest(),
             plan_on_disk.get('source_hash'))
 
+    def test_preview_generation_records_matching_lineage_hash(self):
+        # The studio previews with package_bundle=False, so the source_hash
+        # is written by the pipeline's assemble step -- not by the bundle
+        # packaging path.  It must still match the shipped activity.py or the
+        # first refinement is refused.  Regression for the auto-style bug.
+        import hashlib
+        from generation.pipeline import generate_activity
+
+        spec = ActivitySpec('Grid Demo', 'A pattern grid game.', 'games',
+                            'MIT')
+        result = generate_activity(
+            spec, output_root=self.output_root, provider_name='local',
+            use_rag=False, validate_code=True, package_bundle=False,
+            enhance=False)
+        disk_source = open(
+            os.path.join(result.project_path, 'activity.py'),
+            encoding='utf-8').read()
+        plan = json.load(
+            open(os.path.join(result.project_path, 'aod_plan.json')))
+        self.assertTrue(plan.get('source_hash'))
+        self.assertEqual(
+            hashlib.sha256(disk_source.encode('utf-8')).hexdigest(),
+            plan['source_hash'])
+
     def test_chess_prompt_generates_playable_board_template(self):
         spec = ActivitySpec(
             name='Chess Club',
