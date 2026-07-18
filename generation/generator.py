@@ -621,6 +621,8 @@ def normalize_plan(spec, plan):
 # widgets (via style classes on its canvas tree) and a class-scoped
 # stylesheet, so nothing else on the screen is affected (safe even in the
 # studio's in-process preview).  Uses only the allowlisted `gi` runtime.
+_AOD_AUTOSTYLE_MARKER = 'Sugar Activity Studio: automatic visual polish'
+
 _AOD_AUTOSTYLE = '''
 
 # --- Sugar Activity Studio: automatic visual polish -------------------------
@@ -717,8 +719,12 @@ def assemble_project(spec, plan, output_root, activity_source=None):
     source = (render_activity_source(spec, plan)
               if activity_source is None else activity_source)
     # Give every shipped activity a consistent, modern Sugar look without
-    # depending on how the model styled it.
-    activity_py = source.rstrip() + '\n\n' + _AOD_AUTOSTYLE
+    # depending on how the model styled it.  Idempotent: a refined source
+    # already carries the bootstrap, so never append it twice.
+    if _AOD_AUTOSTYLE_MARKER in source:
+        activity_py = source
+    else:
+        activity_py = source.rstrip() + '\n\n' + _AOD_AUTOSTYLE
     files = {
         'activity.py': activity_py,
         'setup.py': _SETUP_SOURCE,

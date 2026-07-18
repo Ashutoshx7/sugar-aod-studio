@@ -392,11 +392,18 @@ def package_generation_result(result):
         return result.bundle_path
 
     result.bundle_path = package_project(result.project_path)
+    result.files = read_project_files(result.project_path)
+    # The shipped activity.py carries the auto-style bootstrap that
+    # assemble_project appended, so the lineage hash must be taken from the
+    # file that was actually written -- otherwise a refinement sees the
+    # parent as "changed" and refuses to run.
+    shipped_source = result.files.get('activity.py')
+    if shipped_source:
+        result.plan['source_hash'] = _source_hash(shipped_source)
     plan_path = os.path.join(result.project_path, 'aod_plan.json')
     with open(plan_path, 'w', encoding='utf-8') as plan_file:
         json.dump(result.plan, plan_file, indent=2, sort_keys=True)
         plan_file.write('\n')
-    result.files = read_project_files(result.project_path)
     return result.bundle_path
 
 

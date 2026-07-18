@@ -12,6 +12,7 @@ import unittest
 from generation.generator import create_prototype_activity
 from generation.generator import enrich_plan
 from generation.generator import infer_template
+from generation.generator import read_project_files
 from generation.templates import render_activity_source
 from core.spec import ActivitySpec
 from generation.validator import validate_bundle
@@ -22,6 +23,42 @@ from generation.validator import validate_source
 def _has_display():
     return bool(os.environ.get('DISPLAY') or
                 os.environ.get('WAYLAND_DISPLAY'))
+
+
+_PLAIN_MODEL_SOURCE = '''# SPDX-License-Identifier: MIT
+import json
+
+import gi
+gi.require_version('Gdk', '3.0')
+gi.require_version('Gtk', '3.0')
+from gi.repository import Gdk
+from gi.repository import GLib
+from gi.repository import Gtk
+
+from sugar3.activity import activity
+from sugar3.activity.widgets import ActivityToolbarButton
+from sugar3.activity.widgets import StopButton
+from sugar3.graphics.toolbarbox import ToolbarBox
+
+
+class GeneratedActivity(activity.Activity):
+    def __init__(self, handle):
+        activity.Activity.__init__(self, handle)
+        toolbar_box = ToolbarBox()
+        toolbar_box.toolbar.insert(ActivityToolbarButton(self), 0)
+        toolbar_box.toolbar.insert(StopButton(self), -1)
+        self.set_toolbar_box(toolbar_box)
+        box = Gtk.Box()
+        self._button = Gtk.Button(label='Go')
+        box.pack_start(self._button, True, True, 0)
+        self.set_canvas(box)
+
+    def read_file(self, file_path):
+        pass
+
+    def write_file(self, file_path):
+        pass
+'''
 
 
 class TestAodGenerator(unittest.TestCase):
@@ -145,6 +182,39 @@ class TestAodGenerator(unittest.TestCase):
         self.assertTrue(frame.get_style_context().has_class('aod-card'))
         self.assertTrue(button.get_style_context().has_class('aod-btn'))
         self.assertTrue(entry.get_style_context().has_class('aod-field'))
+
+    def test_shipped_source_hash_matches_ondisk_for_lineage(self):
+        # Regression: the auto-style bootstrap is appended to the written
+        # activity.py, so the plan's source_hash must be taken from the
+        # shipped file -- otherwise a refinement wrongly sees the parent as
+        # "changed" and refuses to run (the lineage guard in service.py).
+        from generation.generator import assemble_project, build_plan
+        from generation.generator import GenerationResult
+        from generation.pipeline import package_generation_result
+        from generation.pipeline import _source_hash
+
+        model_source = _PLAIN_MODEL_SOURCE
+        spec = ActivitySpec('Chess', 'Create a chess activity.', 'games',
+                            'MIT')
+        plan = enrich_plan(spec, build_plan(spec))
+        # Mimic the provider path storing the pre-bootstrap hash first.
+        plan['source_hash'] = _source_hash(model_source)
+        project = assemble_project(spec, plan, self.output_root,
+                                   activity_source=model_source)
+        result = GenerationResult(
+            spec=spec, plan=plan, project_path=project, bundle_path='',
+            bundle_id=plan['bundle_id'],
+            files=read_project_files(project))
+        package_generation_result(result)
+
+        disk_source = open(
+            os.path.join(project, 'activity.py'), encoding='utf-8').read()
+        plan_on_disk = json.load(
+            open(os.path.join(project, 'aod_plan.json')))
+        # This is exactly what service.py compares for the lineage guard.
+        self.assertEqual(
+            hashlib.sha256(disk_source.encode('utf-8')).hexdigest(),
+            plan_on_disk.get('source_hash'))
 
     def test_chess_prompt_generates_playable_board_template(self):
         spec = ActivitySpec(
